@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Private Bookings: Lock down entirely from client-side access
+    match /bookings/{bookingId} {
+      allow read, write: if false;
+    }
+
+    // 2. Public Inventory: Allow the Squarespace frontend to fetch availability,
+    // but block all client-side modifications.
+    match /public/{date} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}
