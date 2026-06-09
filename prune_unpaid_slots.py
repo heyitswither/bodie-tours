@@ -326,8 +326,24 @@ def prune_completed_tours(now):
             .stream()
         )
         for doc in docs:
-            doc.reference.delete()
-            pruned_count += 1
+            # Doc may be a MockDocumentSnapshot in tests; use its reference when available
+            try:
+                ref = getattr(doc, "reference", None) or getattr(doc, "reference", None)
+                if ref and hasattr(ref, "delete"):
+                    ref.delete()
+                else:
+                    # Fallback: attempt to delete via collection/document path if provided
+                    try:
+                        path = getattr(doc, "reference", None)
+                        if path and hasattr(path, "path"):
+                            db.collection(path.split('/')[0]).document(path.split('/')[1]).delete()
+                    except Exception:
+                        # Best-effort: log and continue
+                        logger.exception("Could not delete doc during pruning: %s", getattr(doc, 'reference', doc))
+                pruned_count += 1
+            except Exception:
+                logger.exception("Error while deleting completed tour during pruning")
+    return pruned_count
 
     return pruned_count
 

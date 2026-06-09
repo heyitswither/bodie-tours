@@ -445,47 +445,62 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     local_tz = ZoneInfo("America/Los_Angeles")
     dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
     dt_local_utc = dt_local.astimezone(timezone.utc)
-    slot_token = dt_local_utc.isoformat()
+    time_key = dt_local.strftime("%H:%M")
 
     # 1. Read the current public inventory
     snapshot = inventory_ref.get(transaction=transaction)
 
     if not snapshot.exists:
-        inventory_data = {"date": date_str, "slots": [], "last_updated": firestore.SERVER_TIMESTAMP}
-        slots = []
+        inventory_data = {"date": date_str, "slots": {}, "last_updated": firestore.SERVER_TIMESTAMP}
+        slots = {}
     else:
         inventory_data = snapshot.to_dict() or {}
-        slots_raw = inventory_data.get("slots", [])
-        # Normalize existing slots to ISO strings for reliable comparison
-        normalized_slots = []
-        for s in slots_raw:
+        slots = inventory_data.get("slots", {})
+
+    # Support two slot schema patterns:
+    # - dict mapping time_str -> {taken, status}
+    # - list/array of timestamps (legacy)
+    if isinstance(slots, dict):
+        slot_entry = slots.get(time_key, {"taken": 0, "status": "AVAILABLE"})
+        # One-group-per-slot rule: reject if this slot already taken
+        if slot_entry.get("taken", 0) > 0:
+            raise ValueError("This time slot is already booked.")
+
+        slot_entry["taken"] = party_size
+        slot_entry["status"] = "AVAILABLE" if slot_entry["taken"] < MAX_CAPACITY else "SOLD_OUT"
+        slots[time_key] = slot_entry
+
+        transaction.set(inventory_ref, {
+            "date": date_str,
+            "slots": slots,
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+    else:
+        # Legacy list handling: keep behavior but normalize to ISO strings
+        slots_list = []
+        for s in slots:
             if isinstance(s, str):
-                normalized_slots.append(s)
+                slots_list.append(s)
             else:
                 try:
-                    normalized_slots.append(s.isoformat())
+                    slots_list.append(s.isoformat())
                 except Exception:
-                    normalized_slots.append(str(s))
-        slots = normalized_slots
+                    slots_list.append(str(s))
+        slot_token = dt_local_utc.isoformat()
+        if slot_token in slots_list:
+            raise ValueError("This time slot is already booked.")
+        slots_list.append(slot_token)
+        transaction.set(inventory_ref, {
+            "date": date_str,
+            "slots": slots_list,
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
 
-    # 2. One-group-per-slot rule: reject if this slot is already taken
-    if slot_token in slots:
-        raise ValueError("This time slot is already booked.")
-
-    # 3. Update inventory (store ISO UTC strings)
-    slots.append(slot_token)
-
-    transaction.set(inventory_ref, {
-        "date": date_str,
-        "slots": slots,
-        "last_updated": firestore.SERVER_TIMESTAMP
-    }, merge=True)
-
-    # 5. Stage Write 2: Create the private booking record (store UTC timestamp)
+    # 5. Stage Write 2: Create the private booking record (store tour_datetime as ISO string)
     new_booking_ref = db.collection("bookings").document()
 
     booking_payload = {
-        "tour_datetime": dt_local_utc,  # store as UTC-aware datetime
+        "tour_datetime": dt_local_utc.isoformat(),
         "party_size": party_size,
         "payment_status": "PENDING",
         "reminder_sent": False,
