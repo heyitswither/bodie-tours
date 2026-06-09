@@ -21,7 +21,7 @@ def fetch_m365_calendars():
     }
     
     print("Querying Microsoft Graph API...\n")
-    res = requests.get("https://graph.microsoft.com/v1.0/me/calendars", headers=headers)
+    res = requests.get("https://graph.microsoft.com/v1.0/me/calendars", headers=headers, timeout=10)
     
     if res.status_code != 200:
         print(f"API Error {res.status_code}: {res.text}")

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock
 from prune_unpaid_slots import prune_unpaid_slots
-
+import logging
 
 # Initialize Firestore
 try:
@@ -441,6 +441,7 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     local_tz = ZoneInfo("America/Los_Angeles")
     dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
     dt_local_utc = dt_local.astimezone(timezone.utc)
+    slot_token = dt_local_utc.isoformat()
 
     # 1. Read the current public inventory
     snapshot = inventory_ref.get(transaction=transaction)
@@ -450,14 +451,25 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
         slots = []
     else:
         inventory_data = snapshot.to_dict() or {}
-        slots = inventory_data.get("slots", [])
+        slots_raw = inventory_data.get("slots", [])
+        # Normalize existing slots to ISO strings for reliable comparison
+        normalized_slots = []
+        for s in slots_raw:
+            if isinstance(s, str):
+                normalized_slots.append(s)
+            else:
+                try:
+                    normalized_slots.append(s.isoformat())
+                except Exception:
+                    normalized_slots.append(str(s))
+        slots = normalized_slots
 
     # 2. One-group-per-slot rule: reject if this slot is already taken
-    if dt_local in slots:
+    if slot_token in slots:
         raise ValueError("This time slot is already booked.")
 
-    # 3. Update inventory
-    slots.append(dt_local)
+    # 3. Update inventory (store ISO UTC strings)
+    slots.append(slot_token)
 
     transaction.set(inventory_ref, {
         "date": date_str,
@@ -465,16 +477,16 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
         "last_updated": firestore.SERVER_TIMESTAMP
     }, merge=True)
 
-    # 5. Stage Write 2: Create the private booking record
+    # 5. Stage Write 2: Create the private booking record (store UTC timestamp)
     new_booking_ref = db.collection("bookings").document()
 
     booking_payload = {
-        "tour_datetime": dt_local,  # timestamp field
+        "tour_datetime": dt_local_utc,  # store as UTC-aware datetime
         "party_size": party_size,
         "payment_status": "PENDING",
         "reminder_sent": False,
         "created_at": firestore.SERVER_TIMESTAMP,
-        "guest": customer_data,   # renamed from 'customer'; includes name, email, phone,
+        "guest": customer_data,
         "integration_ids": {
             "qbo_invoice_id": None,
             "m365_event_id": None
@@ -604,7 +616,8 @@ def handle_booking(request):
                 "token": token
             }, 200, headers)
 
-        except Exception:
+        except Exception as exc:
+            logging.exception("Error during post-transaction integrations for booking %s: %s", booking_id, exc)
             # 7. Send immediate acknowledgment email via M365 about temporary issue (if any)
             try:
                 m365_token, m365_user_id = get_m365_access_token()
@@ -622,17 +635,14 @@ def handle_booking(request):
                     party_size=party_size,
                 )
             except Exception as email_err:
-                print(f"Failed to send acknowledgment email for booking {booking_id}: {email_err}")
-            
-            import traceback
-            traceback.print_exc()
+                logging.exception("Failed to send acknowledgment email for booking %s: %s", booking_id, email_err)
+
             return ({"status": "error", "message": "Failed to process payload."}, 500, headers)
 
     except ValueError as e:
         return ({"status": "error", "message": str(e)}, 409, headers)
-    except Exception:
-        import traceback
-        traceback.print_exc()
+    except Exception as exc:
+        logging.exception("Unhandled error in handle_booking: %s", exc)
         return ({"status": "error", "message": "Failed to process payload."}, 500, headers)
 
 
