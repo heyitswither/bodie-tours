@@ -702,15 +702,47 @@ def handle_booking(request):
                 except Exception as del_err:
                     logging.exception("Failed to delete booking %s during rollback: %s", booking_id, del_err)
 
-                # Revert inventory slot taken count if possible
+                # Revert inventory reservation, preferring current 'taken_slots' schema
                 try:
                     inv_snap = inventory_ref.get()
                     if getattr(inv_snap, 'exists', True):
                         inv_data = inv_snap.to_dict() or {}
-                        slots_data = inv_data.get("slots", {})
-                        if isinstance(slots_data, dict) and time_str in slots_data:
-                            slots_data[time_str]["taken"] = max(0, slots_data[time_str].get("taken", 0) - party_size)
-                            inventory_ref.set({"slots": slots_data}, merge=True)
+                        # Prefer taken_slots list (current schema)
+                        if "taken_slots" in inv_data:
+                            taken = inv_data.get("taken_slots", [])
+                            # Build local key matching stored format (YYYY-MM-DD HH:MM)
+                            try:
+                                local_key = dt_local.strftime("%Y-%m-%d %H:%M")
+                            except Exception:
+                                local_key = None
+                            new_taken = []
+                            for ts in taken:
+                                try:
+                                    if isinstance(ts, str):
+                                        parsed = datetime.fromisoformat(ts)
+                                    else:
+                                        parsed = ts
+                                    parsed_local = parsed.astimezone(ZoneInfo("America/Los_Angeles")) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Los_Angeles"))
+                                    if local_key and parsed_local.strftime("%Y-%m-%d %H:%M") == local_key:
+                                        # skip this slot (remove reservation)
+                                        continue
+                                except Exception:
+                                    # keep unknown entries
+                                    pass
+                                new_taken.append(ts)
+                            try:
+                                inventory_ref.update({"taken_slots": new_taken, "last_updated": firestore.SERVER_TIMESTAMP})
+                            except Exception:
+                                inventory_ref.set({"taken_slots": new_taken}, merge=True)
+                        else:
+                            # Fallback to legacy 'slots' dict update
+                            slots_data = inv_data.get("slots", {})
+                            if isinstance(slots_data, dict) and time_str in slots_data:
+                                slots_data[time_str]["taken"] = max(0, slots_data[time_str].get("taken", 0) - party_size)
+                                try:
+                                    inventory_ref.update({"slots": slots_data, "last_updated": firestore.SERVER_TIMESTAMP})
+                                except Exception:
+                                    inventory_ref.set({"slots": slots_data}, merge=True)
                 except Exception as inv_err:
                     logging.exception("Failed to revert inventory for %s %s: %s", date_str, time_str, inv_err)
             except Exception as rb_err:
