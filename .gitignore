@@ -1,1 +1,11 @@
 .venv
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+__pycache__/
+*.pyc
+*.log
+*.tmp
+.aider*
+.agents/

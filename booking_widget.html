@@ -1,0 +1,968 @@
+<style>
+  /* Custom Styling - Premium Historic & Rustic Earth Tones Theme */
+  :root {
+    --bg-warm-sand: #faf8f5;
+    --bg-card: #ffffff;
+    --text-charcoal: #2d2b2a;
+    --text-muted: #615e5c;
+    --accent-copper: #8c6239;
+    --accent-hover: #704d2b;
+    --accent-light: #f5efe8;
+    --border-sand: #e5e2dd;
+    --success-olive: #4a7856;
+    --success-light: #eef3ef;
+    --error-terracotta: #b84c4c;
+    --error-light: #fdf5f5;
+    --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-sans: 'Inter', -apple-system, sans-serif;
+  }
+
+  #bodie-booking-widget {
+    background: var(--bg-card);
+    border: 1px solid var(--border-sand);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(45, 43, 42, 0.05);
+    width: 100%;
+    max-width: 580px;
+    margin: 40px auto;
+    padding: 40px;
+    box-sizing: border-box;
+    position: relative;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    color: var(--text-charcoal);
+  }
+
+  #bodie-booking-widget h1, 
+  #bodie-booking-widget h2, 
+  #bodie-booking-widget h3 {
+    font-family: var(--font-serif);
+    margin-top: 0;
+    color: var(--text-charcoal);
+  }
+
+  #bodie-booking-widget h2 {
+    font-size: 1.8rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+
+  #bodie-booking-widget p {
+    color: var(--text-muted);
+    line-height: 1.6;
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }
+
+  /* Progress Indicator Bar */
+  .bb-progress {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    position: relative;
+  }
+
+  .bb-progress::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--border-sand);
+    z-index: 1;
+    transform: translateY(-50%);
+  }
+
+  .bb-progress-bar {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    height: 2px;
+    background: var(--accent-copper);
+    z-index: 1;
+    transform: translateY(-50%);
+    transition: var(--transition-smooth);
+    width: 0%;
+  }
+
+  .bb-progress-step {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid var(--border-sand);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+    z-index: 2;
+    color: var(--text-muted);
+    transition: var(--transition-smooth);
+  }
+
+  .bb-progress-step.active {
+    border-color: var(--accent-copper);
+    color: var(--accent-copper);
+    background: var(--accent-light);
+  }
+
+  .bb-progress-step.completed {
+    background: var(--accent-copper);
+    border-color: var(--accent-copper);
+    color: white;
+  }
+
+  /* Wizard Steps Container */
+  .bb-step {
+    display: none;
+    animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .bb-step.active {
+    display: block;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(15px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Calendar Styling */
+  .bb-calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
+  .bb-month-btn {
+    background: transparent;
+    border: 1px solid var(--border-sand);
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: var(--transition-smooth);
+    color: var(--text-charcoal);
+  }
+
+  .bb-month-btn:hover {
+    background: var(--accent-light);
+    border-color: var(--accent-copper);
+    color: var(--accent-copper);
+  }
+
+  #bb-month-label {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 500;
+  }
+
+  .bb-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    text-align: center;
+  }
+
+  .bb-weekday-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .bb-day {
+    aspect-ratio: 1.1;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    transition: var(--transition-smooth);
+    position: relative;
+    padding: 0;
+  }
+
+  .bb-day:hover:not(.unavailable):not(.selected) {
+    background: var(--accent-light);
+    color: var(--accent-copper);
+  }
+
+  .bb-day.available {
+    font-weight: 500;
+    color: var(--text-charcoal);
+  }
+
+  .bb-day.available::after {
+    content: '';
+    position: absolute;
+    bottom: 6px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--success-olive);
+  }
+
+  .bb-day.selected {
+    background: var(--accent-copper);
+    color: white;
+    border-color: var(--accent-copper);
+  }
+
+  .bb-day.selected::after {
+    background: white;
+  }
+
+  .bb-day.unavailable {
+    color: var(--border-sand);
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .bb-day.empty {
+    cursor: default;
+    pointer-events: none;
+  }
+
+  /* Slots Styling */
+  .bb-slots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+  }
+
+  .bb-slot {
+    border: 1px solid var(--border-sand);
+    border-radius: 8px;
+    padding: 14px 10px;
+    text-align: center;
+    cursor: pointer;
+    background: var(--bg-card);
+    transition: var(--transition-smooth);
+  }
+
+  .bb-slot:hover:not(.full) {
+    border-color: var(--accent-copper);
+    background: var(--accent-light);
+    color: var(--accent-copper);
+  }
+
+  .bb-slot.selected {
+    border-color: var(--accent-copper);
+    background: var(--accent-copper);
+    color: white;
+  }
+
+  .bb-slot.full {
+    background: #fcfbfa;
+    border-color: var(--border-sand);
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    text-decoration: line-through;
+    color: var(--text-muted);
+  }
+
+  .bb-slot-time {
+    font-size: 1rem;
+    font-weight: 600;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .bb-slot-status {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .bb-slot.selected .bb-slot-status {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* Form Inputs */
+  .bb-form-group {
+    margin-bottom: 20px;
+    text-align: left;
+  }
+
+  .bb-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text-charcoal);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .bb-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--border-sand);
+    border-radius: 8px;
+    font-size: 1rem;
+    color: var(--text-charcoal);
+    background: var(--bg-warm-sand);
+    box-sizing: border-box;
+    transition: var(--transition-smooth);
+  }
+
+  .bb-input:focus {
+    outline: none;
+    border-color: var(--accent-copper);
+    background: var(--bg-card);
+    box-shadow: 0 0 0 3px rgba(140, 98, 57, 0.15);
+  }
+
+  /* Buttons */
+  .bb-btn-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 32px;
+  }
+
+  .bb-btn {
+    flex: 1;
+    padding: 14px 28px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bb-btn-primary {
+    background: var(--accent-copper);
+    color: white;
+    border: 1px solid var(--accent-copper);
+  }
+
+  .bb-btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .bb-btn-primary:disabled {
+    background: var(--border-sand);
+    border-color: var(--border-sand);
+    color: var(--text-muted);
+    cursor: not-allowed;
+  }
+
+  .bb-btn-secondary {
+    background: transparent;
+    color: var(--text-charcoal);
+    border: 1px solid var(--border-sand);
+  }
+
+  .bb-btn-secondary:hover {
+    background: var(--bg-warm-sand);
+    border-color: var(--text-muted);
+  }
+
+  /* Notice and Error Box */
+  .bb-info-box {
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    line-height: 1.5;
+    text-align: left;
+  }
+
+  .bb-info-box.info {
+    background: var(--success-light);
+    border: 1px solid rgba(74, 120, 86, 0.2);
+    color: var(--success-olive);
+  }
+
+  .bb-info-box.error {
+    background: var(--error-light);
+    border: 1px solid rgba(184, 76, 76, 0.2);
+    color: var(--error-terracotta);
+  }
+
+  .bb-info-box-icon {
+    font-weight: bold;
+    font-size: 1.1rem;
+  }
+
+  /* Loading Overlay (Glassmorphism) */
+  .bb-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(250, 248, 245, 0.8);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .bb-loading-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .bb-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-sand);
+    border-top-color: var(--accent-copper);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 16px;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Confirmation Pane */
+  .bb-confirmation {
+    text-align: center;
+    padding: 20px 0;
+  }
+
+  .bb-success-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--success-light);
+    color: var(--success-olive);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.2rem;
+    margin-bottom: 24px;
+  }
+
+  .bb-payment-card {
+    background: var(--bg-warm-sand);
+    border: 1px dashed var(--accent-copper);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 28px 0;
+  }
+
+  .bb-payment-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border-sand);
+    padding-top: 16px;
+    margin-top: 16px;
+    text-align: left;
+  }
+
+  .bb-meta-label {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .bb-meta-val {
+    color: var(--text-charcoal);
+    font-weight: 600;
+    text-align: right;
+  }
+
+  /* Mobile Adjustments */
+  @media (max-width: 480px) {
+    #bodie-booking-widget {
+      padding: 24px;
+      margin: 20px auto;
+    }
+    .bb-btn-row {
+      flex-direction: column-reverse;
+    }
+    .bb-calendar-grid {
+      gap: 2px;
+    }
+  }
+</style>
+
+<div id="bodie-booking-widget" role="main">
+  
+  <div id="bb-loading" class="bb-loading-overlay" aria-hidden="true">
+    <div class="bb-spinner"></div>
+    <div id="bb-loading-text" style="font-weight: 500; color: var(--text-charcoal);">Checking availability...</div>
+  </div>
+
+  <div class="bb-progress" aria-label="Booking steps progress">
+    <div id="bb-progress-bar" class="bb-progress-bar"></div>
+    <div class="bb-progress-step active" id="step-dot-1">1</div>
+    <div class="bb-progress-step" id="step-dot-2">2</div>
+    <div class="bb-progress-step" id="step-dot-3">3</div>
+    <div class="bb-progress-step" id="step-dot-4">4</div>
+  </div>
+
+  <div class="bb-step active" id="step-pane-1">
+    <h2>🏔 Select Tour Date</h2>
+    <p>Please choose a date from the calendar. Highlighted dates have open tour guide availability blocks scheduled by the Park Ranger.</p>
+    
+    <div class="bb-calendar-header">
+      <button class="bb-month-btn" onclick="bbChangeMonth(-1)" aria-label="Previous month">‹</button>
+      <span id="bb-month-label">June 2026</span>
+      <button class="bb-month-btn" onclick="bbChangeMonth(1)" aria-label="Next month">›</button>
+    </div>
+
+    <div class="bb-calendar-grid" id="bb-calendar-grid">
+      </div>
+    
+    <div class="bb-btn-row">
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Select Time Slot →</button>
+    </div>
+  </div>
+
+  <div class="bb-step" id="step-pane-2">
+    <h2>⏰ Select Time</h2>
+    <p>Choose an available time slot for <strong id="bb-selected-date-display"></strong>. The park enforces a one-group-per-slot policy.</p>
+    
+    <div class="bb-slots-grid" id="bb-slots-grid">
+      </div>
+
+    <div class="bb-btn-row">
+      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(1)">← Change Date</button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-3" disabled onclick="bbGoTo(3)">Guest Details →</button>
+    </div>
+  </div>
+
+  <div class="bb-step" id="step-pane-3">
+    <h2>👤 Guest Information</h2>
+    <p>Provide details to secure your state park booking reservation. Double-booking holds are applied atomically.</p>
+
+    <div id="bb-error-box" class="bb-info-box error" style="display: none;">
+      <span class="bb-info-box-icon">⚠️</span>
+      <span id="bb-error-message">Please fill in all required fields.</span>
+    </div>
+
+    <form id="bb-booking-form" onsubmit="event.preventDefault();">
+      <div class="bb-form-group">
+        <label class="bb-label" for="guest-name">Full Name *</label>
+        <input class="bb-input" id="guest-name" required placeholder="Jane Doe" type="text" autocomplete="name">
+      </div>
+
+      <div class="bb-form-group">
+        <label class="bb-label" for="guest-email">Email Address *</label>
+        <input class="bb-input" id="guest-email" required placeholder="jane.doe@example.com" type="email" autocomplete="email">
+      </div>
+
+      <div class="bb-form-group">
+        <label class="bb-label" for="guest-phone">Phone Number *</label>
+        <input class="bb-input" id="guest-phone" required placeholder="555-0199" type="tel" autocomplete="tel">
+      </div>
+
+      <div class="bb-form-group">
+        <label class="bb-label" for="guest-party">Party Size * (Max 20)</label>
+        <input class="bb-input" id="guest-party" required placeholder="4" type="number" min="1" max="20">
+      </div>
+    </form>
+
+    <div class="bb-btn-row">
+      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(2)">← Change Time</button>
+      <button class="bb-btn bb-btn-primary" onclick="bbSubmitBooking()">Confirm Booking Hold →</button>
+    </div>
+  </div>
+
+  <div class="bb-step" id="step-pane-4">
+    <div class="bb-confirmation">
+      <div class="bb-success-icon">✓</div>
+      <h2>Booking Hold Secured!</h2>
+      <p>Your guided tour reservation has been placed on hold. To finalize your booking and prevent automatic release, please complete the invoice payment.</p>
+
+      <div class="bb-payment-card">
+        <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-copper);">Secure QuickBooks Payment</span>
+        <h3 style="margin: 12px 0 20px 0; font-size: 1.5rem;" id="bb-amount-display">$0.00 DUE</h3>
+        
+        <a id="bb-pay-link" href="#" target="_blank" rel="noopener">
+          <button class="bb-btn bb-btn-primary" style="width: 100%;">Pay Invoice Now →</button>
+        </a>
+
+        <div class="bb-payment-meta">
+          <span class="bb-meta-label">Booking ID</span>
+          <span class="bb-meta-val" id="bb-confirm-id">--</span>
+          
+          <span class="bb-meta-label">Reserved Tour</span>
+          <span class="bb-meta-val" id="bb-confirm-datetime">--</span>
+
+          <span class="bb-meta-label">Party Size</span>
+          <span class="bb-meta-val" id="bb-confirm-party">--</span>
+        </div>
+      </div>
+
+      <div class="bb-info-box info">
+        <span class="bb-info-box-icon">ℹ️</span>
+        <span>Notice: A copy of this invoice details, payment link, and M365 calendar confirmation has been sent to your email. Unpaid holds will release automatically after the TTL expires.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Config Options
+  const BOOKING_API = 'https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking';
+  const FIREBASE_PROJECT = 'bodie-tours-prod';
+  const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/bodie-tours/documents`;
+  const TOUR_PRICE = 25.00;
+
+  // State Variables
+  let bbState = {
+    currentYear: null,
+    currentMonth: null,
+    selectedDate: null,   
+    selectedTime: null,   
+    availableDates: {}    
+  };
+
+  // Initialize Widget
+  async function bbInit() {
+    const now = new Date();
+    bbState.currentYear = now.getFullYear();
+    bbState.currentMonth = now.getMonth();
+    
+    await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
+    bbRenderCalendar();
+  }
+
+  // Fetch month availability from M365 endpoint
+  async function bbFetchMonthAvailability(year, month) {
+    bbShowLoading("Checking Ranger schedules...");
+
+    const startDayStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const endDayStr = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
+
+    // Construct M365 endpoint URL
+    const url = `/m365/free-availability?start=${startDayStr}&end=${endDayStr}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Could not load calendar availability.");
+      const data = await res.json();
+
+      bbState.availableDates = {};
+
+      // data.dates is an object keyed by date strings
+      Object.entries(data.dates || {}).forEach(([docDate, doc]) => {
+        // Ensure date is within range (already filtered by endpoint)
+        const fields = doc.slots || {};
+        // Check for any AVAILABLE slots
+        const hasOpenSlots = Object.values(fields).some(s => s.status === "AVAILABLE");
+        if (hasOpenSlots) {
+          bbState.availableDates[docDate] = fields;
+        }
+      });
+    } catch (err) {
+      console.error("Availability error:", err);
+    } finally {
+      bbHideLoading();
+    }
+  }
+
+  function parseSlotKey(key, dateStr) {
+    if (key.includes('T') || (key.length > 5 && !isNaN(Date.parse(key)))) {
+      const d = new Date(key);
+      if (!isNaN(d.getTime())) {
+        const displayTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+        const apiTime = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        return { displayTime, apiTime };
+      }
+    }
+    
+    const parts = key.split(':');
+    if (parts.length >= 2) {
+      const hours = parseInt(parts[0], 10);
+      const minutes = parseInt(parts[1], 10);
+      const suffix = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = String(minutes).padStart(2, '0');
+      const displayTime = `${displayHours}:${displayMinutes} ${suffix}`;
+      const apiTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      return { displayTime, apiTime };
+    }
+    
+    return { displayTime: key, apiTime: key };
+  }
+
+  function bbRenderCalendar() {
+    const { currentYear, currentMonth } = bbState;
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    
+    document.getElementById('bb-month-label').textContent = `${monthNames[currentMonth]} ${currentYear}`;
+    const grid = document.getElementById('bb-calendar-grid');
+    grid.innerHTML = '';
+
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+      const el = document.createElement('div');
+      el.className = 'bb-weekday-header';
+      el.textContent = d;
+      grid.appendChild(el);
+    });
+
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let i = 0; i < firstDay; i++) {
+      const blank = document.createElement('div');
+      blank.className = 'bb-day empty';
+      grid.appendChild(blank);
+    }
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const btn = document.createElement('button');
+      btn.className = 'bb-day';
+      btn.textContent = d;
+      btn.setAttribute('type', 'button');
+      
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayDate = new Date(currentYear, currentMonth, d);
+
+      if (dayDate < today || !bbState.availableDates[dateStr]) {
+        btn.classList.add('unavailable');
+        btn.setAttribute('aria-disabled', 'true');
+      } else {
+        btn.classList.add('available');
+        btn.onclick = () => bbSelectDate(dateStr, btn);
+      }
+      
+      if (bbState.selectedDate === dateStr) {
+        btn.classList.add('selected');
+      }
+      
+      grid.appendChild(btn);
+    }
+  }
+
+  async function bbChangeMonth(delta) {
+    bbState.currentMonth += delta;
+    if (bbState.currentMonth < 0) {
+      bbState.currentMonth = 11;
+      bbState.currentYear--;
+    } else if (bbState.currentMonth > 11) {
+      bbState.currentMonth = 0;
+      bbState.currentYear++;
+    }
+    
+    await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
+    bbRenderCalendar();
+  }
+
+  function bbSelectDate(dateStr, element) {
+    bbState.selectedDate = dateStr;
+    bbState.selectedTime = null; 
+    
+    document.querySelectorAll('.bb-day').forEach(el => el.classList.remove('selected'));
+    element.classList.add('selected');
+    
+    document.getElementById('bb-to-step-2').disabled = false;
+  }
+
+  function bbPopulateSlots() {
+    const dateStr = bbState.selectedDate;
+    const slots = bbState.availableDates[dateStr] || {};
+    const grid = document.getElementById('bb-slots-grid');
+    grid.innerHTML = '';
+
+    const dateObj = new Date(dateStr + 'T12:00:00');
+    document.getElementById('bb-selected-date-display').textContent = dateObj.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    });
+
+    const sortedSlots = Object.entries(slots).sort(([a],[b]) => a.localeCompare(b));
+    
+    if (sortedSlots.length === 0) {
+      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: 0.95rem;">No guides available on this day.</div>';
+      document.getElementById('bb-to-step-3').disabled = true;
+      return;
+    }
+
+    sortedSlots.forEach(([key, value]) => {
+      const taken = parseInt(value?.mapValue?.fields?.taken?.integerValue || 0, 10);
+      const status = value?.mapValue?.fields?.status?.stringValue || 'AVAILABLE';
+      
+      const isFull = status === 'SOLD_OUT' || taken > 0;
+      const { displayTime, apiTime } = parseSlotKey(key, dateStr);
+
+      const slotBtn = document.createElement('div');
+      slotBtn.className = 'bb-slot';
+      if (isFull) slotBtn.classList.add('full');
+      
+      slotBtn.innerHTML = `
+        <span class="bb-slot-time">${displayTime}</span>
+        <span class="bb-slot-status">${isFull ? 'Sold Out' : 'Available'}</span>
+      `;
+      
+      if (!isFull) {
+        slotBtn.onclick = () => {
+          document.querySelectorAll('.bb-slot').forEach(s => s.classList.remove('selected'));
+          slotBtn.classList.add('selected');
+          bbState.selectedTime = apiTime;
+          document.getElementById('bb-to-step-3').disabled = false;
+        };
+      }
+      
+      if (bbState.selectedTime === apiTime) {
+        slotBtn.classList.add('selected');
+      }
+
+      grid.appendChild(slotBtn);
+    });
+  }
+
+  async function bbSubmitBooking() {
+    const name = document.getElementById('guest-name').value.trim();
+    const email = document.getElementById('guest-email').value.trim();
+    const phone = document.getElementById('guest-phone').value.trim();
+    const partySize = parseInt(document.getElementById('guest-party').value, 10);
+    const errBox = document.getElementById('bb-error-box');
+    const errMsg = document.getElementById('bb-error-message');
+
+    errBox.style.display = 'none';
+
+    if (!name || !email || !phone || !partySize) {
+      errMsg.textContent = 'Please fill out all required fields.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    if (partySize < 1 || partySize > 20) {
+      errMsg.textContent = 'Party size must be between 1 and 20.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    bbShowLoading("Reserving slots with ranger...");
+
+    const payload = {
+      date: bbState.selectedDate,
+      time: bbState.selectedTime,
+      party_size: partySize,
+      guest: { name, email, phone }
+    };
+
+    try {
+      const response = await fetch(BOOKING_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success') {
+        document.getElementById('bb-pay-link').href = result.payment_link;
+        document.getElementById('bb-amount-display').textContent = `$${(partySize * TOUR_PRICE).toFixed(2)} DUE`;
+        document.getElementById('bb-confirm-id').textContent = result.booking_id;
+        document.getElementById('bb-confirm-party').textContent = `${partySize} Guest(s)`;
+        
+        const timeLabel = bbState.selectedTime;
+        const displayDate = new Date(bbState.selectedDate + 'T12:00:00').toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric'
+        });
+        document.getElementById('bb-confirm-datetime').textContent = `${displayDate} @ ${timeLabel}`;
+        
+        // Optional automatic redirect to payment after a short delay (4 seconds)
+        setTimeout(() => {
+          window.location.href = result.payment_link;
+        }, 4000);
+        
+        bbGoTo(4);
+      } else {
+        errMsg.textContent = result.message || 'The slot is no longer available. Please select another time.';
+        errBox.style.display = 'flex';
+      }
+    } catch (err) {
+      console.error("Booking failed:", err);
+      errMsg.textContent = 'Network or connection error. Please try again.';
+      errBox.style.display = 'flex';
+    } finally {
+      bbHideLoading();
+    }
+  }
+
+  function bbGoTo(step) {
+    document.querySelectorAll('.bb-step').forEach(pane => pane.classList.remove('active'));
+    document.getElementById(`step-pane-${step}`).classList.add('active');
+    
+    const progressWidth = ((step - 1) / 3) * 100;
+    document.getElementById('bb-progress-bar').style.width = `${progressWidth}%`;
+    
+    document.querySelectorAll('.bb-progress-step').forEach((dot, index) => {
+      if (index + 1 < step) {
+        dot.className = 'bb-progress-step completed';
+      } else if (index + 1 === step) {
+        dot.className = 'bb-progress-step active';
+      } else {
+        dot.className = 'bb-progress-step';
+      }
+    });
+
+    if (step === 2) {
+      bbPopulateSlots();
+    }
+    
+    window.scrollTo({
+      top: document.getElementById('bodie-booking-widget').offsetTop - 30,
+      behavior: 'smooth'
+    });
+  }
+
+  function bbShowLoading(text) {
+    const loading = document.getElementById('bb-loading');
+    document.getElementById('bb-loading-text').textContent = text;
+    loading.setAttribute('aria-hidden', 'false');
+    loading.classList.add('active');
+  }
+
+  function bbHideLoading() {
+    const loading = document.getElementById('bb-loading');
+    loading.setAttribute('aria-hidden', 'true');
+    loading.classList.remove('active');
+  }
+
+  bbInit();
+</script>

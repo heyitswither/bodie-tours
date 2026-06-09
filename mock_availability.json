@@ -1,0 +1,39 @@
+{
+  "documents": [
+    {
+      "name": "projects/bodie-tours-prod/databases/bodie-tours/documents/public/2026-06-15",
+      "fields": {
+        "slots": {
+          "mapValue": {
+            "fields": {
+              "10:00": {
+                "mapValue": {
+                  "fields": {
+                    "status": { "stringValue": "AVAILABLE" },
+                    "taken": { "integerValue": "0" }
+                  }
+                }
+              },
+              "13:00": {
+                "mapValue": {
+                  "fields": {
+                    "status": { "stringValue": "SOLD_OUT" },
+                    "taken": { "integerValue": "0" }
+                  }
+                }
+              },
+              "16:00": {
+                "mapValue": {
+                  "fields": {
+                    "status": { "stringValue": "AVAILABLE" },
+                    "taken": { "integerValue": "1" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
