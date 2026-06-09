@@ -461,14 +461,15 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     # - dict mapping time_str -> {taken, status}
     # - list/array of timestamps (legacy)
     if isinstance(slots, dict):
-        slot_entry = slots.get(time_key, {"taken": 0, "status": "AVAILABLE"})
+        # slots is a mapping time_str -> {"taken": int, "status": str}
+        current = slots.get(time_key) or {"taken": 0, "status": "AVAILABLE"}
         # One-group-per-slot rule: reject if this slot already taken
-        if slot_entry.get("taken", 0) > 0:
-            raise ValueError("This time slot is already booked.")
+        if current.get("taken", 0) > 0:
+            raise ValueError("This time slot is already booked by another group.")
 
-        slot_entry["taken"] = party_size
-        slot_entry["status"] = "AVAILABLE" if slot_entry["taken"] < MAX_CAPACITY else "SOLD_OUT"
-        slots[time_key] = slot_entry
+        current["taken"] = party_size
+        current["status"] = "AVAILABLE" if current["taken"] < MAX_GROUP_SIZE else "SOLD_OUT"
+        slots[time_key] = current
 
         transaction.set(inventory_ref, {
             "date": date_str,
@@ -656,6 +657,28 @@ def handle_booking(request):
                 )
             except Exception as email_err:
                 logging.exception("Failed to send acknowledgment email for booking %s: %s", booking_id, email_err)
+
+            # Attempt to rollback the partially created booking and inventory reservation
+            try:
+                # Delete booking document if it exists
+                try:
+                    db.collection("bookings").document(booking_id).delete()
+                except Exception as del_err:
+                    logging.exception("Failed to delete booking %s during rollback: %s", booking_id, del_err)
+
+                # Revert inventory slot taken count if possible
+                try:
+                    inv_snap = inventory_ref.get()
+                    if getattr(inv_snap, 'exists', True):
+                        inv_data = inv_snap.to_dict() or {}
+                        slots_data = inv_data.get("slots", {})
+                        if isinstance(slots_data, dict) and time_str in slots_data:
+                            slots_data[time_str]["taken"] = max(0, slots_data[time_str].get("taken", 0) - party_size)
+                            inventory_ref.set({"slots": slots_data}, merge=True)
+                except Exception as inv_err:
+                    logging.exception("Failed to revert inventory for %s %s: %s", date_str, time_str, inv_err)
+            except Exception as rb_err:
+                logging.exception("Rollback encountered error for booking %s: %s", booking_id, rb_err)
 
             return ({"status": "error", "message": "Failed to process payload."}, 500, headers)
 
