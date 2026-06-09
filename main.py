@@ -456,15 +456,49 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     else:
         inventory_data = snapshot.to_dict() or {}
         slots = inventory_data.get("slots", {})
+        taken_slots_raw = inventory_data.get("taken_slots", [])
+        # Normalize taken_slots to ISO strings for comparison
+        normalized_taken = []
+        for ts in taken_slots_raw:
+            if isinstance(ts, str):
+                normalized_taken.append(ts)
+            else:
+                try:
+                    normalized_taken.append(ts.isoformat())
+                except Exception:
+                    try:
+                        normalized_taken.append(str(ts))
+                    except Exception:
+                        pass
 
-    # Support two slot schema patterns:
-    # - dict mapping time_str -> {taken, status}
-    # - list/array of timestamps (legacy)
-    if isinstance(slots, dict):
-        # slots is a mapping time_str -> {"taken": int, "status": str}
+    # Support two slot schema patterns and prefer current 'taken_slots' schema.
+    slot_token = dt_local_utc.isoformat()
+
+    # If taken_slots exists, use it as the canonical source of truth
+    if 'normalized_taken' in locals() and normalized_taken:
+        if slot_token in normalized_taken:
+            raise ValueError("This time slot is already booked by another group.")
+
+    if 'taken_slots' in inventory_data:
+        # current schema uses taken_slots list
+        new_taken = list(normalized_taken)
+        if slot_token in new_taken:
+            raise ValueError("This time slot is already booked by another group.")
+        new_taken.append(slot_token)
+        transaction.set(inventory_ref, {
+            "date": date_str,
+            "taken_slots": new_taken,
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+    elif isinstance(slots, dict):
+        # legacy dict mapping time_str -> {"taken": int, "status": str}
         current = slots.get(time_key) or {"taken": 0, "status": "AVAILABLE"}
         # One-group-per-slot rule: reject if this slot already taken
         if current.get("taken", 0) > 0:
+            raise ValueError("This time slot is already booked by another group.")
+        # Also check normalized taken list just in case
+        if 'normalized_taken' in locals() and slot_token in normalized_taken:
             raise ValueError("This time slot is already booked by another group.")
 
         current["taken"] = party_size
@@ -477,19 +511,12 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
             "last_updated": firestore.SERVER_TIMESTAMP
         }, merge=True)
     else:
-        # Legacy list handling: keep behavior but normalize to ISO strings
-        slots_list = []
-        for s in slots:
-            if isinstance(s, str):
-                slots_list.append(s)
-            else:
-                try:
-                    slots_list.append(s.isoformat())
-                except Exception:
-                    slots_list.append(str(s))
-        slot_token = dt_local_utc.isoformat()
-        if slot_token in slots_list:
-            raise ValueError("This time slot is already booked.")
+        # No recognizable schema; create taken_slots list and add the token
+        transaction.set(inventory_ref, {
+            "date": date_str,
+            "taken_slots": [slot_token],
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
         slots_list.append(slot_token)
         transaction.set(inventory_ref, {
             "date": date_str,
