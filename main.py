@@ -457,34 +457,43 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
         inventory_data = snapshot.to_dict() or {}
         slots = inventory_data.get("slots", {})
         taken_slots_raw = inventory_data.get("taken_slots", [])
-        # Normalize taken_slots to ISO strings for comparison
+        # Normalize taken_slots to local YYYY-MM-DD HH:MM strings (America/Los_Angeles)
         normalized_taken = []
+        local_tz_check = ZoneInfo("America/Los_Angeles")
         for ts in taken_slots_raw:
-            if isinstance(ts, str):
-                normalized_taken.append(ts)
-            else:
+            try:
+                if isinstance(ts, str):
+                    parsed = datetime.fromisoformat(ts)
+                else:
+                    parsed = ts
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                parsed_local = parsed.astimezone(local_tz_check)
+                normalized_taken.append(parsed_local.strftime("%Y-%m-%d %H:%M"))
+            except Exception:
                 try:
-                    normalized_taken.append(ts.isoformat())
+                    normalized_taken.append(str(ts))
                 except Exception:
-                    try:
-                        normalized_taken.append(str(ts))
-                    except Exception:
-                        pass
+                    pass
 
     # Support two slot schema patterns and prefer current 'taken_slots' schema.
     slot_token = dt_local_utc.isoformat()
 
-    # If taken_slots exists, use it as the canonical source of truth
+    # If taken_slots exists, use it as the canonical source of truth (compare in local timezone)
     if 'normalized_taken' in locals() and normalized_taken:
-        if slot_token in normalized_taken:
+        # compare local formatted strings
+        local_key = dt_local.strftime("%Y-%m-%d %H:%M")
+        if local_key in normalized_taken:
             raise ValueError("This time slot is already booked by another group.")
 
     if 'taken_slots' in inventory_data:
         # current schema uses taken_slots list
         new_taken = list(normalized_taken)
-        if slot_token in new_taken:
+        local_key = dt_local.strftime("%Y-%m-%d %H:%M")
+        if local_key in new_taken:
             raise ValueError("This time slot is already booked by another group.")
-        new_taken.append(slot_token)
+        # append the booking as local formatted string
+        new_taken.append(local_key)
         transaction.set(inventory_ref, {
             "date": date_str,
             "taken_slots": new_taken,
