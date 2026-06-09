@@ -74,7 +74,12 @@ def open_browser_and_poll(db, doc_path, login_url, timeout=300):
     print_warn(f"Authorization tokens missing in config/{doc_path}.")
     print_info(f"Opening web browser to authorize: {login_url}")
     try:
-        subprocess.run(["xdg-open", login_url], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Only attempt to auto-open the browser when the BROWSER env var is set
+        if os.environ.get("BROWSER"):
+            subprocess.run(["xdg-open", login_url], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            print_info("Auto-opening browser disabled. Set the BROWSER env var to enable.")
+            print_info(f"Please open this URL manually in your browser: {login_url}")
     except Exception as e:
         print_warn(f"Failed to automatically open browser via xdg-open: {e}")
         print_info(f"Please open this URL manually in your browser: {login_url}")

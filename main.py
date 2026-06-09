@@ -310,6 +310,10 @@ def _resolve_qbo_credentials(auth_data):
     if not isinstance(redirect_uri, str):
         redirect_uri = os.environ.get("QBO_REDIRECT_URI")
 
+    # Ensure redirect_uri is present in production environment
+    if env == "production" and not redirect_uri:
+        raise ValueError("Redirect URI must be configured for QBO in production environment")
+
     return client_id, client_secret, verifier_token, redirect_uri
 
 
@@ -573,8 +577,9 @@ def handle_booking(request):
                 auth_doc = db.collection("config").document("m365_auth").get()
                 if auth_doc.exists:
                     calendar_id = auth_doc.to_dict().get("calendar_id")
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.exception("Failed to read calendar_id from config/m365_auth: %s", exc)
+                calendar_id = None
                 
         is_available = check_m365_availability(m365_token, m365_user_id, date_str, time_str, calendar_id)
         if not is_available:
@@ -764,6 +769,12 @@ def m365_login(request):
         "M365_REDIRECT_URI",
         "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback"
     )
+
+    # Validate critical parameters
+    if not client_id:
+        return ({"status": "error", "message": "M365 client_id is not configured."}, 500)
+    if not redirect_uri:
+        return ({"status": "error", "message": "M365 redirect_uri is not configured."}, 500)
 
     state = secrets.token_urlsafe(32)
 

@@ -141,7 +141,8 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
             ]:
                 body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
                 subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
-        except Exception:
+        except Exception as exc:
+            logger.exception("Failed to load custom email template; falling back to simple template: %s", exc)
             # Fallback to simple template on any error
             subject = "Reminder: Your Bodie State Park Tour Booking Is Pending Payment"
             body = (
@@ -185,8 +186,9 @@ def remove_m365_event(access_token, user_id, event_id):
             auth_doc = db.collection("config").document("m365_auth").get()
             if auth_doc.exists:
                 calendar_id = auth_doc.to_dict().get("calendar_id")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception("Failed fetching m365_auth calendar_id: %s", exc)
+            calendar_id = None
 
     if calendar_id:
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events/{event_id}"
@@ -420,8 +422,8 @@ def prune_unpaid_slots(request):
                         reminder_count += 1
                         try:
                             doc.reference.update({"reminder_sent_count": firestore.Increment(1)})
-                        except Exception:
-                            logger.exception("Failed to increment reminder_sent_count")
+                        except Exception as exc:
+                            logger.exception("Failed to increment reminder_sent_count: %s", exc)
 
             # Cancel the booking if we are within the TTL window before the tour (i.e., the deadline has passed)
             if time_to_tour <= ttl and time_to_tour > timedelta(0):
