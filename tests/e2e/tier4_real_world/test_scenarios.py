@@ -126,6 +126,8 @@ class MockDocumentSnapshot:
 class MockTransaction:
     def __init__(self, db_mock):
         self.db_mock = db_mock
+        self._read_only = False
+        self._id = b"mock-id"
     def get(self, ref):
         return ref.get()
     def set(self, ref, data, merge=False):
@@ -137,6 +139,17 @@ class MockTransaction:
 def patch_firestore(mock_firestore):
     db = MockFirestore()
     mock_firestore.return_value = db
+
+    # Enforce DummyFieldFilter on firestore modules to prevent MagicMock filter leakage
+    from google.cloud import firestore as gc_firestore
+    import prune_unpaid_slots
+    import main
+
+    gc_firestore.FieldFilter = DummyFieldFilter
+    prune_unpaid_slots.firestore.FieldFilter = DummyFieldFilter
+    if hasattr(main, "firestore"):
+        main.firestore.FieldFilter = DummyFieldFilter
+
     yield db
 
 def setup_post_mock(mock_requests_post, is_available=True):
@@ -222,6 +235,9 @@ def test_booking_ttl_expires(client, mock_requests_post, patch_firestore):
     # Call prune endpoint
     resp = client.post('/prune')
     assert resp.status_code == 200
+
+    print("DEBUG keys in db:", list(patch_firestore.db.keys()))
+    print("DEBUG bookings/b1:", patch_firestore.db.get("bookings/b1"))
 
     # DB state should reflect cancellation (4h > 3h TTL for 30h lead time)
     assert patch_firestore.db["bookings/b1"]["payment_status"] == "CANCELLED_UNPAID"

@@ -6,6 +6,11 @@ REGION="us-west2"
 RUNTIME="python310"
 LOG_FILE="deploy.log"
 
+# Resolve default Compute service account if SERVICE_ACCOUNT_EMAIL is not set in environment
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format="value(projectNumber)")
+DEFAULT_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+SERVICE_ACCOUNT_EMAIL="${SERVICE_ACCOUNT_EMAIL:-$DEFAULT_SA}"
+
 # Clear previous deploy log
 > "$LOG_FILE"
 
