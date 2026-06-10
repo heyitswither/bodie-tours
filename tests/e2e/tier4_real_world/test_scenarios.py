@@ -53,6 +53,13 @@ class MockCollection:
                 match = True
                 for flt in self.filters:
                     if hasattr(flt, "field") and hasattr(flt, "op") and hasattr(flt, "value"):
+                        # Detect and gracefully handle leaked MagicMock filters to avoid destructive queries
+                        if (isinstance(flt, MagicMock) or
+                            isinstance(getattr(flt, "field", None), MagicMock) or
+                            isinstance(getattr(flt, "op", None), MagicMock) or
+                            isinstance(getattr(flt, "value", None), MagicMock)):
+                            match = False
+                            break
                         field = flt.field
                         op = flt.op
                         val = flt.value

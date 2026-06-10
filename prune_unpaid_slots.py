@@ -415,8 +415,6 @@ def prune_completed_tours(now):
                 logger.exception("Error while deleting completed tour during pruning")
     return pruned_count
 
-    return pruned_count
-
 
 # ---------------------------------------------------------------------------
 # Main Prune Function
