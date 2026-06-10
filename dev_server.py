@@ -1,8 +1,6 @@
 import os
 import logging
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
-import requests
+from datetime import datetime, timedelta
 from google.cloud import firestore
 from main import get_m365_access_token, check_m365_availability
 from flask import Flask, request, jsonify
@@ -171,7 +169,6 @@ def m365_free_availability():
     """Return available tour slots based on M365 calendar 'Bodie Tours' with free status."""
     token, user_id = get_m365_access_token()
     # Expect start and end date as YYYY-MM-DD, default to today and +30 days
-    from datetime import datetime, timedelta
 
     start_str = request.args.get("start")
     end_str = request.args.get("end")

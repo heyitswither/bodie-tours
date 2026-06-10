@@ -51,11 +51,6 @@ def find_available_date_and_slot(db):
         db.collection("public").document(date_str).delete()
     except Exception:
         pass  # Ignore if document does not exist
-    # Define the slot at 10:00 AM Pacific Time
-    local_tz = ZoneInfo("America/Los_Angeles")
-    slot_local = datetime.combine(tomorrow, datetime.min.time()).replace(
-        hour=10, minute=0, tzinfo=local_tz
-    )
     # Store the slot timestamp in Firestore
     db.collection("public").document(date_str).set(
         {
