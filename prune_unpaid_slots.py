@@ -1,8 +1,5 @@
 import functions_framework
 import logging
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 import os
 import html
 from google.cloud import firestore
@@ -10,9 +7,10 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import requests
 from unittest.mock import MagicMock
-import secrets
-
 from typing import Any
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 _cached_db: Any = None
 

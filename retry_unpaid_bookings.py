@@ -4,12 +4,14 @@ Attempts to process pending unpaid bookings, creates QBO invoice, sends acknowle
 """
 
 import functions_framework
-import os
 import logging
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from google.cloud import firestore
 import requests
+
+# Re‑use helpers from existing modules
+from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
 
 
 # Initialize Firestore client (cached)
@@ -23,10 +25,6 @@ def _get_db():
         mock_db = MagicMock()
         mock_db.collection = MagicMock()
         return mock_db
-
-
-# Re‑use helpers from existing modules
-from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
 
 
 def _send_temp_issue_email(

@@ -11,8 +11,7 @@ from flask import redirect, jsonify, make_response
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from unittest.mock import MagicMock
-from prune_unpaid_slots import prune_unpaid_slots, send_outlook_reminder
+from prune_unpaid_slots import send_outlook_reminder
 import logging
 
 # Initialize Firestore
