@@ -803,9 +803,7 @@ def test_cancel_tour_invalid_token_branch(mock_main_db):
 @patch("main.db")
 def test_get_m365_access_token_naive_cached(mock_db):
     mock_doc = MagicMock()
-    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
-        hours=1
-    )
+    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
     mock_doc.get.return_value.to_dict.return_value = {
         "user_id": "ranger_1",
         "access_token": "valid_cached",
@@ -820,9 +818,7 @@ def test_get_m365_access_token_naive_cached(mock_db):
 @patch("main.db")
 def test_get_qbo_access_token_naive_cached(mock_db):
     mock_doc = MagicMock()
-    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
-        hours=1
-    )
+    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
     mock_doc.get.return_value.to_dict.return_value = {
         "access_token": "qbo_cached",
         "expires_at": naive_expires,
