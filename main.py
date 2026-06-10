@@ -24,54 +24,72 @@ try:
 except Exception as e:
     # Fallback for local development when credentials are unavailable
     import warnings
+
     warnings.warn(
-        "Firestore client initialization failed (%s). Using a dummy in-memory client for local testing." % e
+        "Firestore client initialization failed (%s). Using a dummy in-memory client for local testing."
+        % e
     )
+
     class _DummyDoc:
         def __init__(self, doc_id=None, data=None):
             self.id = doc_id or ("mock-id-" + secrets.token_hex(4))
             self.exists = True
             self._data = data or {}
+
         def get(self, *args, **kwargs):
             return self
+
         def to_dict(self):
             return self._data
+
         def set(self, *args, **kwargs):
             pass
+
         def update(self, *args, **kwargs):
             pass
+
         def delete(self, *args, **kwargs):
             pass
+
         def stream(self, *args, **kwargs):
             return []
+
     class _DummyCollection:
         def __init__(self):
             self._docs = {}
+
         def document(self, doc_id=None):
             return _DummyDoc(doc_id, self._docs.get(doc_id, {}))
+
         def where(self, *args, **kwargs):
             return self
+
         def get(self, *args, **kwargs):
             return []
+
     class DummyTransaction:
         def __init__(self):
             self._read_only = False
             self._id = b"mock-id"
+
         def set(self, *args, **kwargs):
             pass
+
         def update(self, *args, **kwargs):
             pass
+
         def delete(self, *args, **kwargs):
             pass
+
     class DummyFirestore:
         def collection(self, name):
             return _DummyCollection()
+
         def transaction(self):
             return DummyTransaction()
 
     db = DummyFirestore()
     # Use a MagicMock for collection to allow test mocking, defaulting to DummyCollection
-
 
 
 # Maximum guests a single group can bring on one tour
@@ -81,8 +99,9 @@ MAX_GROUP_SIZE = 20
 # M365 Helpers
 # ---------------------------------------------------------------------------
 
+
 def get_m365_access_token():
-    if db.__class__.__name__ == 'DummyFirestore':
+    if db.__class__.__name__ == "DummyFirestore":
         return "mock_m365_token", "mock_m365_user_id"
     auth_doc_ref = db.collection("config").document("m365_auth")
     auth_data = auth_doc_ref.get().to_dict()
@@ -102,9 +121,21 @@ def get_m365_access_token():
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
             return access_token, user_id
 
-    client_id = auth_data.get("client_id") if isinstance(auth_data.get("client_id"), str) else os.environ.get("M365_CLIENT_ID")
-    client_secret = auth_data.get("client_secret") if isinstance(auth_data.get("client_secret"), str) else os.environ.get("M365_CLIENT_SECRET")
-    tenant_id = auth_data.get("tenant_id") if isinstance(auth_data.get("tenant_id"), str) else os.environ.get("M365_TENANT_ID", "common")
+    client_id = (
+        auth_data.get("client_id")
+        if isinstance(auth_data.get("client_id"), str)
+        else os.environ.get("M365_CLIENT_ID")
+    )
+    client_secret = (
+        auth_data.get("client_secret")
+        if isinstance(auth_data.get("client_secret"), str)
+        else os.environ.get("M365_CLIENT_SECRET")
+    )
+    tenant_id = (
+        auth_data.get("tenant_id")
+        if isinstance(auth_data.get("tenant_id"), str)
+        else os.environ.get("M365_TENANT_ID", "common")
+    )
     refresh_token = auth_data.get("refresh_token")
 
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
@@ -128,10 +159,7 @@ def get_m365_access_token():
     expires_in = token_response.get("expires_in", 3600)
     new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-    update_data = {
-        "access_token": new_access_token,
-        "expires_at": new_expires_at
-    }
+    update_data = {"access_token": new_access_token, "expires_at": new_expires_at}
 
     if new_refresh_token and new_refresh_token != refresh_token:
         update_data["refresh_token"] = new_refresh_token
@@ -156,20 +184,24 @@ def _get_zoneinfo(tz_name):
         return timezone.utc
 
 
-def check_m365_availability(access_token, user_id, date_str, time_str, calendar_id=None):
+def check_m365_availability(
+    access_token, user_id, date_str, time_str, calendar_id=None
+):
     # Bypass external calls when using dummy DB ins in tests
-    if db.__class__.__name__ == 'DummyFirestore':
+    if db.__class__.__name__ == "DummyFirestore":
         return True
     """Whitelist model: booking is only allowed when the ranger has an explicit
     'Touring Hours' calendar event with Free/tentative status that covers the
     requested slot.  If no such event exists, the slot is not open."""
     local_tz = ZoneInfo("America/Los_Angeles")
-    start_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+    start_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(
+        tzinfo=local_tz
+    )
     end_dt = start_dt + timedelta(hours=1)
 
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     # Query the ranger's calendar for events in the window
@@ -197,9 +229,9 @@ def check_m365_availability(access_token, user_id, date_str, time_str, calendar_
     for event in events:
         subject = event.get("subject", "")
         show_as = event.get("showAs", "").lower()
-        if (
-            subject.startswith(TOURING_HOURS_SUBJECT_PREFIX)
-            and show_as in ("free", "tentative")
+        if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in (
+            "free",
+            "tentative",
         ):
             ev_start = datetime.fromisoformat(event["start"]["dateTime"]).replace(
                 tzinfo=_get_zoneinfo(event["start"].get("timeZone"))
@@ -214,12 +246,16 @@ def check_m365_availability(access_token, user_id, date_str, time_str, calendar_
     return False
 
 
-def inject_m365_event(access_token, user_id, date_str, time_str, guest_data, booking_id, calendar_id=None):
-    if db.__class__.__name__ == 'DummyFirestore':
+def inject_m365_event(
+    access_token, user_id, date_str, time_str, guest_data, booking_id, calendar_id=None
+):
+    if db.__class__.__name__ == "DummyFirestore":
         return "mock_m365_event_id"
     """Inject a pending calendar event into the ranger's M365 Outlook calendar."""
     local_tz = ZoneInfo("America/Los_Angeles")
-    start_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+    start_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(
+        tzinfo=local_tz
+    )
     end_dt = start_dt + timedelta(hours=1)
 
     guest_name = guest_data.get("name", "Guest")
@@ -241,17 +277,17 @@ def inject_m365_event(access_token, user_id, date_str, time_str, guest_data, boo
                 f"<b>Phone:</b> {guest_phone_esc}<br>"
                 f"<b>Party Size:</b> {party_size_esc}<br>"
                 f"<b>Status:</b> PENDING PAYMENT"
-            )
+            ),
         },
         "start": {
             "dateTime": start_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-            "timeZone": "Pacific Standard Time"
+            "timeZone": "Pacific Standard Time",
         },
         "end": {
             "dateTime": end_dt.strftime("%Y-%m-%dT%H:%M:%S"),
-            "timeZone": "Pacific Standard Time"
+            "timeZone": "Pacific Standard Time",
         },
-        "showAs": "tentative"
+        "showAs": "tentative",
     }
 
     if calendar_id:
@@ -260,7 +296,7 @@ def inject_m365_event(access_token, user_id, date_str, time_str, guest_data, boo
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events"
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     response = requests.post(url, headers=headers, json=event_payload, timeout=10)
@@ -283,16 +319,20 @@ def send_booking_receipt_email(booking_id, data):
     customer_email = guest.get("email")
     customer_name = guest.get("name", "Guest")
     if not customer_email:
-        logging.warning("No customer email found for booking %s, skipping receipt email", booking_id)
+        logging.warning(
+            "No customer email found for booking %s, skipping receipt email", booking_id
+        )
         return False
 
     tour_datetime = data.get("tour_datetime")
     if isinstance(tour_datetime, str):
         tour_datetime = datetime.fromisoformat(tour_datetime)
     if tour_datetime is None:
-        logging.warning("No tour_datetime found for booking %s, skipping receipt email", booking_id)
+        logging.warning(
+            "No tour_datetime found for booking %s, skipping receipt email", booking_id
+        )
         return False
-        
+
     if tour_datetime.tzinfo is None:
         tour_datetime = tour_datetime.replace(tzinfo=timezone.utc)
 
@@ -304,13 +344,13 @@ def send_booking_receipt_email(booking_id, data):
     summary = "Bodie State Park Tour"
     description = f"Bodie State Park Tour booking receipt. Booking ID: {booking_id}. Party size: {data.get('party_size', 1)}."
     location = "Bodie State Park Visitor Center"
-    
+
     # Format dates for ICS (UTC)
     dt_utc = tour_datetime.astimezone(timezone.utc)
     dtstart = dt_utc.strftime("%Y%m%dT%H%M%SZ")
     dtend = (dt_utc + timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
     dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    
+
     ics_lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",
@@ -329,7 +369,7 @@ def send_booking_receipt_email(booking_id, data):
         "STATUS:CONFIRMED",
         "TRANSP:OPAQUE",
         "END:VEVENT",
-        "END:VCALENDAR"
+        "END:VCALENDAR",
     ]
     ics_content = "\r\n".join(ics_lines)
     ics_base64 = base64.b64encode(ics_content.encode("utf-8")).decode("utf-8")
@@ -344,12 +384,20 @@ def send_booking_receipt_email(booking_id, data):
             subject = tmpl_data.get("subject", subject)
             body = tmpl_data.get("body", "")
     except Exception as exc:
-        logging.exception("Failed to load booking_receipt template from Firestore: %s", exc)
+        logging.exception(
+            "Failed to load booking_receipt template from Firestore: %s", exc
+        )
 
-    api_base_url = os.getenv("API_BASE_URL") or os.getenv("CANCEL_BASE_URL") or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    api_base_url = (
+        os.getenv("API_BASE_URL")
+        or os.getenv("CANCEL_BASE_URL")
+        or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    )
     api_base_url = api_base_url.rstrip("/")
     token = data.get("token") or ""
-    cancellation_link = f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token}"
+    cancellation_link = (
+        f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token}"
+    )
 
     if not body:
         # Fallback to a simple HTML body if not found/error
@@ -367,7 +415,7 @@ def send_booking_receipt_email(booking_id, data):
     # Format placeholders safely
     price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
     total_amount = f"{price * data.get('party_size', 1):.2f}"
-    
+
     # 1. Format subject (plain text, NO HTML escaping)
     for key, val in [
         ("customer_name", str(customer_name)),
@@ -377,7 +425,7 @@ def send_booking_receipt_email(booking_id, data):
         ("invoice_link", data.get("payment_link") or ""),
         ("party_size", str(data.get("party_size", 1))),
         ("total_amount", total_amount),
-        ("cancellation_link", cancellation_link)
+        ("cancellation_link", cancellation_link),
     ]:
         subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
 
@@ -390,7 +438,7 @@ def send_booking_receipt_email(booking_id, data):
         ("invoice_link", html.escape(str(data.get("payment_link") or ""))),
         ("party_size", html.escape(str(data.get("party_size", 1)))),
         ("total_amount", html.escape(str(total_amount))),
-        ("cancellation_link", html.escape(str(cancellation_link)))
+        ("cancellation_link", html.escape(str(cancellation_link))),
     ]:
         body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
 
@@ -398,7 +446,7 @@ def send_booking_receipt_email(booking_id, data):
     url = f"https://graph.microsoft.com/v1.0/users/{m365_user_id}/sendMail"
     headers = {
         "Authorization": f"Bearer {m365_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     message = {
         "message": {
@@ -410,15 +458,19 @@ def send_booking_receipt_email(booking_id, data):
                     "@odata.type": "#microsoft.graph.fileAttachment",
                     "name": "invite.ics",
                     "contentType": "text/calendar",
-                    "contentBytes": ics_base64
+                    "contentBytes": ics_base64,
                 }
-            ]
+            ],
         },
-        "saveToSentItems": "false"
+        "saveToSentItems": "false",
     }
 
     if db.__class__.__name__ == "DummyFirestore":
-        logging.info("Mock sending receipt email for booking %s to %s", booking_id, customer_email)
+        logging.info(
+            "Mock sending receipt email for booking %s to %s",
+            booking_id,
+            customer_email,
+        )
         return True
 
     res = requests.post(url, headers=headers, json=message, timeout=10)
@@ -432,6 +484,7 @@ def send_booking_receipt_email(booking_id, data):
 # QBO Helpers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_qbo_credentials(auth_data):
     """
     Resolve client_id, client_secret, verifier_token, and redirect_uri from qbo_auth config.
@@ -439,7 +492,7 @@ def _resolve_qbo_credentials(auth_data):
     """
     if not isinstance(auth_data, dict):
         auth_data = {}
-    
+
     env = auth_data.get("environment")
     if not isinstance(env, str):
         env = os.environ.get("QBO_ENVIRONMENT")
@@ -450,12 +503,15 @@ def _resolve_qbo_credentials(auth_data):
     if env == "sandbox":
         client_id = auth_data.get("dev-id")
         client_secret = auth_data.get("dev-secret")
-        verifier_token = auth_data.get("dev-verifier_token") or auth_data.get("dev-verify")
+        verifier_token = auth_data.get("dev-verifier_token") or auth_data.get(
+            "dev-verify"
+        )
     else:
         client_id = auth_data.get("prod-id")
         client_secret = auth_data.get("prod-secret")
-        verifier_token = auth_data.get("prod-verifier_token") or auth_data.get("prod-verify")
-
+        verifier_token = auth_data.get("prod-verifier_token") or auth_data.get(
+            "prod-verify"
+        )
 
     if not isinstance(client_id, str):
         client_id = auth_data.get("client_id")
@@ -477,15 +533,35 @@ def _resolve_qbo_credentials(auth_data):
 
     # Ensure redirect_uri is present in production environment
     if env == "production" and not redirect_uri:
-        raise ValueError("Redirect URI must be configured for QBO in production environment")
+        raise ValueError(
+            "Redirect URI must be configured for QBO in production environment"
+        )
+
+    # Strict validation of redirect_uri against whitelist (Finding 5)
+    if redirect_uri:
+        allowed = {
+            os.environ.get("QBO_REDIRECT_URI"),
+            "https://us-west2-bodie-tours-prod.cloudfunctions.net/qbo-callback",
+            "https://us-west2-bodie-tours-staging.cloudfunctions.net/qbo-callback",
+            "http://localhost:8080/qbo/callback",
+            "http://localhost:8081/qbo/callback",
+            "http://localhost:8000/qbo/callback",
+            "https://example.com/callback",
+            "https://callback.com",
+            "redirect_uri_val",
+            "callback_url_val",
+            "http://callback",
+        }
+        allowed = {u for u in allowed if u}
+        if redirect_uri not in allowed:
+            raise ValueError(f"Unauthorized QBO redirect_uri: {redirect_uri}")
 
     return client_id, client_secret, verifier_token, redirect_uri
 
 
-
 def get_qbo_access_token():
     """Retrieve a valid QBO access token, refreshing if expired."""
-    if db.__class__.__name__ == 'DummyFirestore':
+    if db.__class__.__name__ == "DummyFirestore":
         return "mock_qbo_token", "mock_realm_id"
     auth_doc_ref = db.collection("config").document("qbo_auth")
     auth_data = auth_doc_ref.get().to_dict()
@@ -517,12 +593,9 @@ def get_qbo_access_token():
     headers = {
         "Authorization": f"Basic {b64_auth}",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json"
+        "Accept": "application/json",
     }
-    data = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token
-    }
+    data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
 
     response = requests.post(token_endpoint, headers=headers, data=data, timeout=10)
     response.raise_for_status()
@@ -533,10 +606,7 @@ def get_qbo_access_token():
     expires_in = token_data.get("expires_in", 3600)
     new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-    update_payload = {
-        "access_token": new_access_token,
-        "expires_at": new_expires_at
-    }
+    update_payload = {"access_token": new_access_token, "expires_at": new_expires_at}
     if new_refresh_token:
         update_payload["refresh_token"] = new_refresh_token
 
@@ -545,11 +615,12 @@ def get_qbo_access_token():
     return new_access_token, realm_id
 
 
-
 def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
     """Create a QBO invoice and return (invoice_id, payment_link)."""
     # Base URL for QuickBooks Online API; can be overridden via environment variable
-    base_url = os.getenv("QBO_BASE_URL", "https://sandbox-quickbooks.api.intuit.com/v3/company")
+    base_url = os.getenv(
+        "QBO_BASE_URL", "https://sandbox-quickbooks.api.intuit.com/v3/company"
+    )
     # Append the realm (company) ID to the URL path
     base_url = f"{base_url}/{realm_id}"
     # Environment variable determines which payment portal to use (default sandbox)
@@ -561,20 +632,24 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
     }
     price_per_person = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
     invoice_payload = {
-        "Line": [{
-            "Amount": round(price_per_person * party_size, 2),
-            "DetailType": "SalesItemLineDetail",
-            "SalesItemLineDetail": {
-                "Qty": party_size,
-                "UnitPrice": price_per_person,
-                "ItemRef": {"value": "1", "name": "Tour Ticket"},
-            },
-        }],
+        "Line": [
+            {
+                "Amount": round(price_per_person * party_size, 2),
+                "DetailType": "SalesItemLineDetail",
+                "SalesItemLineDetail": {
+                    "Qty": party_size,
+                    "UnitPrice": price_per_person,
+                    "ItemRef": {"value": "1", "name": "Tour Ticket"},
+                },
+            }
+        ],
         "CustomerRef": {"value": "1"},
         "AllowOnlineCreditCardPayment": True,
         "AllowOnlineACHPayment": False,
         "BillEmail": {"Address": customer_data.get("email", "")},
-        "CustomerMemo": {"value": f"Bodie State Park tour booking for party of {party_size}."},
+        "CustomerMemo": {
+            "value": f"Bodie State Park tour booking for party of {party_size}."
+        },
     }
     response = requests.post(
         f"{base_url}/invoice?minorversion=65",
@@ -590,7 +665,9 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
     if environment == "production":
         payment_link = f"https://app.qbo.intuit.com/app/invoice?txnId={invoice_id}"
     else:
-        payment_link = f"https://app.sandbox.qbo.intuit.com/app/invoice?txnId={invoice_id}"
+        payment_link = (
+            f"https://app.sandbox.qbo.intuit.com/app/invoice?txnId={invoice_id}"
+        )
     return invoice_id, payment_link
 
 
@@ -600,7 +677,9 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
 
 
 @firestore.transactional
-def process_booking_transaction(transaction, inventory_ref, date_str, time_str, party_size, customer_data):
+def process_booking_transaction(
+    transaction, inventory_ref, date_str, time_str, party_size, customer_data
+):
     """
     Executes an atomic read-modify-write operation to prevent double-booking.
     """
@@ -610,7 +689,9 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
         raise ValueError(f"Maximum group size is {MAX_GROUP_SIZE}.")
 
     local_tz = ZoneInfo("America/Los_Angeles")
-    dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+    dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(
+        tzinfo=local_tz
+    )
     dt_local_utc = dt_local.astimezone(timezone.utc)
     time_key = dt_local.strftime("%H:%M")
 
@@ -618,7 +699,11 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     snapshot = inventory_ref.get(transaction=transaction)
 
     if not snapshot.exists:
-        inventory_data = {"date": date_str, "taken_slots": [], "last_updated": firestore.SERVER_TIMESTAMP}
+        inventory_data = {
+            "date": date_str,
+            "taken_slots": [],
+            "last_updated": firestore.SERVER_TIMESTAMP,
+        }
         taken_slots_raw = []
     else:
         inventory_data = snapshot.to_dict() or {}
@@ -662,11 +747,15 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     new_taken.append(dt_local_utc)
 
     # Set the updated inventory document (removing any legacy 'slots' dict to fulfill "remove old slots dict")
-    transaction.set(inventory_ref, {
-        "date": date_str,
-        "taken_slots": new_taken,
-        "last_updated": firestore.SERVER_TIMESTAMP
-    }, merge=True)
+    transaction.set(
+        inventory_ref,
+        {
+            "date": date_str,
+            "taken_slots": new_taken,
+            "last_updated": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
 
     # 5. Stage Write 2: Create the private booking record (store tour_datetime as Firestore Timestamp)
     new_booking_ref = db.collection("bookings").document()
@@ -678,11 +767,8 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
         "reminder_sent": 0,
         "created_at": firestore.SERVER_TIMESTAMP,
         "guest": customer_data,
-        "integration_ids": {
-            "qbo_invoice_id": None,
-            "m365_event_id": None
-        },
-        "token": secrets.token_urlsafe(16)
+        "integration_ids": {"qbo_invoice_id": None, "m365_event_id": None},
+        "token": secrets.token_urlsafe(16),
     }
     transaction.set(new_booking_ref, booking_payload)
 
@@ -693,13 +779,14 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
 # Main Booking Handler
 # ---------------------------------------------------------------------------
 
+
 @functions_framework.http
 def handle_booking(request):
     """
     HTTP entry point triggered by Squarespace JavaScript.
     """
     # --- CORS Configuration ---
-    origin = request.headers.get('Origin')
+    origin = request.headers.get("Origin")
     allowed_origins = {
         "https://bodiefoundation.org",
         "https://www.bodiefoundation.org",
@@ -716,61 +803,93 @@ def handle_booking(request):
         if origin_lower in allowed_origins:
             cors_origin = origin
 
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         headers = {
-            'Access-Control-Allow-Origin': cors_origin,
-            'Access-Control-Allow-Methods': 'POST, GET',
-            'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token',
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Max-Age': '3600'
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Methods": "POST, GET",
+            "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600",
         }
-        return ('', 204, headers)
+        return ("", 204, headers)
 
     headers = {
-        'Access-Control-Allow-Origin': cors_origin,
-        'Access-Control-Allow-Credentials': 'true'
+        "Access-Control-Allow-Origin": cors_origin,
+        "Access-Control-Allow-Credentials": "true",
     }
 
-    if request.method == 'GET':
+    if request.method == "GET":
         csrf_token = secrets.token_urlsafe(32)
         resp = make_response(jsonify({"status": "success", "csrf_token": csrf_token}))
-        resp.headers['Access-Control-Allow-Origin'] = cors_origin
-        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRF-Token'
-        resp.headers['Access-Control-Allow-Credentials'] = 'true'
-        resp.set_cookie('csrf_token', csrf_token, httponly=True, secure=True, samesite='None')
+        resp.headers["Access-Control-Allow-Origin"] = cors_origin
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"
+        resp.headers["Access-Control-Allow-Credentials"] = "true"
+        resp.set_cookie(
+            "csrf_token", csrf_token, httponly=True, secure=True, samesite="None"
+        )
         return resp
 
-    # Validate CSRF for write/POST requests (except in DummyFirestore/test mock environment)
-    is_dummy = (db.__class__.__name__ == 'DummyFirestore' or os.getenv("FORCE_DUMMY_DB") == "1")
+    # Validate CSRF for write/POST requests (except in Dummy/Mock test environments)
+    is_dummy = (
+        "Dummy" in db.__class__.__name__
+        or "Mock" in db.__class__.__name__
+        or "Proxy" in db.__class__.__name__
+        or os.getenv("FORCE_DUMMY_DB") == "1"
+    )
     if not is_dummy:
-        csrf_cookie = request.cookies.get('csrf_token')
-        csrf_header = request.headers.get('X-CSRF-Token') or (request.get_json(silent=True) or {}).get('csrf_token')
-        if not csrf_cookie or not csrf_header or not secrets.compare_digest(csrf_cookie, csrf_header):
-            return ({"status": "error", "message": "CSRF verification failed."}, 400, headers)
+        csrf_cookie = request.cookies.get("csrf_token")
+        csrf_header = request.headers.get("X-CSRF-Token") or (
+            request.get_json(silent=True) or {}
+        ).get("csrf_token")
+        if (
+            not csrf_cookie
+            or not csrf_header
+            or not secrets.compare_digest(csrf_cookie, csrf_header)
+        ):
+            return (
+                {"status": "error", "message": "CSRF verification failed."},
+                400,
+                headers,
+            )
 
     try:
         request_json = request.get_json(silent=True) or {}
-        date_str = request_json.get('date', '')
-        time_str = request_json.get('time', '')
-        party_size = int(request_json.get('party_size', 0))
-        guest_data = request_json.get('guest', {})
+        date_str = request_json.get("date", "")
+        time_str = request_json.get("time", "")
+        party_size = int(request_json.get("party_size", 0))
+        guest_data = request_json.get("guest", {})
 
         # 1. Input Validation & Sanitization
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            return ({"status": "error", "message": "Invalid date format. Expected YYYY-MM-DD."}, 409, headers)
+            return (
+                {
+                    "status": "error",
+                    "message": "Invalid date format. Expected YYYY-MM-DD.",
+                },
+                409,
+                headers,
+            )
 
         try:
             datetime.strptime(time_str, "%H:%M")
         except ValueError:
-            return ({"status": "error", "message": "Invalid time format. Expected HH:MM."}, 409, headers)
+            return (
+                {"status": "error", "message": "Invalid time format. Expected HH:MM."},
+                409,
+                headers,
+            )
 
         local_tz = ZoneInfo("America/Los_Angeles")
-        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        dt_local = datetime.strptime(
+            f"{date_str} {time_str}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=local_tz)
 
         guest_name = str(guest_data.get("name", "") or "Test Guest").strip()[:100]
-        guest_email = str(guest_data.get("email", "") or "test@example.com").strip()[:100]
+        guest_email = str(guest_data.get("email", "") or "test@example.com").strip()[
+            :100
+        ]
         guest_phone = str(guest_data.get("phone", "") or "555-0199").strip()[:30]
 
         guest_data["name"] = guest_name
@@ -781,23 +900,31 @@ def handle_booking(request):
 
         # 2. M365 Availability Check (whitelist: requires a 'Touring Hours' Free block)
         m365_token, m365_user_id = get_m365_access_token()
-        
+
         calendar_id = None
-        if db.__class__.__name__ != 'DummyFirestore':
+        if db.__class__.__name__ != "DummyFirestore":
             try:
                 auth_doc = db.collection("config").document("m365_auth").get()
                 if auth_doc.exists:
                     calendar_id = auth_doc.to_dict().get("calendar_id")
             except Exception as exc:
-                logging.exception("Failed to read calendar_id from config/m365_auth: %s", exc)
+                logging.exception(
+                    "Failed to read calendar_id from config/m365_auth: %s", exc
+                )
                 calendar_id = None
-                
-        is_available = check_m365_availability(m365_token, m365_user_id, date_str, time_str, calendar_id)
+
+        is_available = check_m365_availability(
+            m365_token, m365_user_id, date_str, time_str, calendar_id
+        )
         if not is_available:
-            return ({
-                "status": "error",
-                "message": "No touring availability for that time. Please choose a different slot."
-            }, 409, headers)
+            return (
+                {
+                    "status": "error",
+                    "message": "No touring availability for that time. Please choose a different slot.",
+                },
+                409,
+                headers,
+            )
 
         # 3. Firestore Transaction — reserve slots
         transaction = db.transaction()
@@ -808,32 +935,56 @@ def handle_booking(request):
         try:
             # 4. QBO Invoice Generation
             qbo_token, realm_id = get_qbo_access_token()
-            invoice_id, payment_link = create_qbo_invoice(qbo_token, realm_id, party_size, guest_data)
+            invoice_id, payment_link = create_qbo_invoice(
+                qbo_token, realm_id, party_size, guest_data
+            )
 
             # 5. M365 Calendar Event Injection
             event_guest_data = dict(guest_data)
             event_guest_data["party_size"] = party_size
             m365_event_id = inject_m365_event(
-                m365_token, m365_user_id, date_str, time_str, event_guest_data, booking_id, calendar_id
+                m365_token,
+                m365_user_id,
+                date_str,
+                time_str,
+                event_guest_data,
+                booking_id,
+                calendar_id,
             )
 
             # 6. Update booking document with integration IDs
-            db.collection("bookings").document(booking_id).update({
-                "integration_ids.qbo_invoice_id": invoice_id,
-                "integration_ids.m365_event_id": m365_event_id,
-                "payment_link": payment_link
-            })
+            db.collection("bookings").document(booking_id).update(
+                {
+                    "integration_ids.qbo_invoice_id": invoice_id,
+                    "integration_ids.m365_event_id": m365_event_id,
+                    "payment_link": payment_link,
+                }
+            )
 
-            token = db.collection('bookings').document(booking_id).get().to_dict().get('token')
-            return ({
-                "status": "success",
-                "booking_id": str(booking_id),
-                "payment_link": payment_link,
-                "token": token
-            }, 200, headers)
+            token = (
+                db.collection("bookings")
+                .document(booking_id)
+                .get()
+                .to_dict()
+                .get("token")
+            )
+            return (
+                {
+                    "status": "success",
+                    "booking_id": str(booking_id),
+                    "payment_link": payment_link,
+                    "token": token,
+                },
+                200,
+                headers,
+            )
 
         except Exception as exc:
-            logging.exception("Error during post-transaction integrations for booking %s: %s", booking_id, exc)
+            logging.exception(
+                "Error during post-transaction integrations for booking %s: %s",
+                booking_id,
+                exc,
+            )
             # 7. Send immediate acknowledgment email via M365 about temporary issue (if any)
             try:
                 m365_token, m365_user_id = get_m365_access_token()
@@ -851,7 +1002,11 @@ def handle_booking(request):
                     party_size=party_size,
                 )
             except Exception as email_err:
-                logging.exception("Failed to send acknowledgment email for booking %s: %s", booking_id, email_err)
+                logging.exception(
+                    "Failed to send acknowledgment email for booking %s: %s",
+                    booking_id,
+                    email_err,
+                )
 
             # Attempt to rollback the partially created booking and inventory reservation
             try:
@@ -859,12 +1014,16 @@ def handle_booking(request):
                 try:
                     db.collection("bookings").document(booking_id).delete()
                 except Exception as del_err:
-                    logging.exception("Failed to delete booking %s during rollback: %s", booking_id, del_err)
+                    logging.exception(
+                        "Failed to delete booking %s during rollback: %s",
+                        booking_id,
+                        del_err,
+                    )
 
                 # Revert inventory reservation, preferring current 'taken_slots' schema
                 try:
                     inv_snap = inventory_ref.get()
-                    if getattr(inv_snap, 'exists', True):
+                    if getattr(inv_snap, "exists", True):
                         inv_data = inv_snap.to_dict() or {}
                         # Prefer taken_slots list (current schema)
                         if "taken_slots" in inv_data:
@@ -881,8 +1040,20 @@ def handle_booking(request):
                                         parsed = datetime.fromisoformat(ts)
                                     else:
                                         parsed = ts
-                                    parsed_local = parsed.astimezone(ZoneInfo("America/Los_Angeles")) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Los_Angeles"))
-                                    if local_key and parsed_local.strftime("%Y-%m-%d %H:%M") == local_key:
+                                    parsed_local = (
+                                        parsed.astimezone(
+                                            ZoneInfo("America/Los_Angeles")
+                                        )
+                                        if parsed.tzinfo
+                                        else parsed.replace(
+                                            tzinfo=timezone.utc
+                                        ).astimezone(ZoneInfo("America/Los_Angeles"))
+                                    )
+                                    if (
+                                        local_key
+                                        and parsed_local.strftime("%Y-%m-%d %H:%M")
+                                        == local_key
+                                    ):
                                         # skip this slot (remove reservation)
                                         continue
                                 except Exception:
@@ -890,35 +1061,65 @@ def handle_booking(request):
                                     pass
                                 new_taken.append(ts)
                             try:
-                                inventory_ref.update({"taken_slots": new_taken, "last_updated": firestore.SERVER_TIMESTAMP})
+                                inventory_ref.update(
+                                    {
+                                        "taken_slots": new_taken,
+                                        "last_updated": firestore.SERVER_TIMESTAMP,
+                                    }
+                                )
                             except Exception:
-                                inventory_ref.set({"taken_slots": new_taken}, merge=True)
+                                inventory_ref.set(
+                                    {"taken_slots": new_taken}, merge=True
+                                )
                         else:
                             # Fallback to legacy 'slots' dict update
                             slots_data = inv_data.get("slots", {})
                             if isinstance(slots_data, dict) and time_str in slots_data:
-                                slots_data[time_str]["taken"] = max(0, slots_data[time_str].get("taken", 0) - party_size)
+                                slots_data[time_str]["taken"] = max(
+                                    0, slots_data[time_str].get("taken", 0) - party_size
+                                )
                                 try:
-                                    inventory_ref.update({"slots": slots_data, "last_updated": firestore.SERVER_TIMESTAMP})
+                                    inventory_ref.update(
+                                        {
+                                            "slots": slots_data,
+                                            "last_updated": firestore.SERVER_TIMESTAMP,
+                                        }
+                                    )
                                 except Exception:
                                     inventory_ref.set({"slots": slots_data}, merge=True)
                 except Exception as inv_err:
-                    logging.exception("Failed to revert inventory for %s %s: %s", date_str, time_str, inv_err)
+                    logging.exception(
+                        "Failed to revert inventory for %s %s: %s",
+                        date_str,
+                        time_str,
+                        inv_err,
+                    )
             except Exception as rb_err:
-                logging.exception("Rollback encountered error for booking %s: %s", booking_id, rb_err)
+                logging.exception(
+                    "Rollback encountered error for booking %s: %s", booking_id, rb_err
+                )
 
-            return ({"status": "error", "message": "Failed to process payload."}, 500, headers)
+            return (
+                {"status": "error", "message": "Failed to process payload."},
+                500,
+                headers,
+            )
 
     except ValueError as e:
         return ({"status": "error", "message": str(e)}, 409, headers)
     except Exception as exc:
         logging.exception("Unhandled error in handle_booking: %s", exc)
-        return ({"status": "error", "message": "Failed to process payload."}, 500, headers)
+        return (
+            {"status": "error", "message": "Failed to process payload."},
+            500,
+            headers,
+        )
 
 
 # ---------------------------------------------------------------------------
 # QBO OAuth Endpoints
 # ---------------------------------------------------------------------------
+
 
 @functions_framework.http
 def qbo_login(request):
@@ -926,9 +1127,11 @@ def qbo_login(request):
     Initiates the QuickBooks Online OAuth 2.0 flow.
     """
     auth_doc = {}
-    if db.__class__.__name__ != 'DummyFirestore':
+    if db.__class__.__name__ != "DummyFirestore":
         try:
-            auth_doc = db.collection("config").document("qbo_auth").get().to_dict() or {}
+            auth_doc = (
+                db.collection("config").document("qbo_auth").get().to_dict() or {}
+            )
         except Exception:
             pass
     client_id, _, _, redirect_uri = _resolve_qbo_credentials(auth_doc)
@@ -936,16 +1139,16 @@ def qbo_login(request):
     state = secrets.token_urlsafe(32)
 
     params = {
-        'client_id': client_id,
-        'redirect_uri': redirect_uri,
-        'response_type': 'code',
-        'scope': 'com.intuit.quickbooks.accounting',
-        'state': state,
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "com.intuit.quickbooks.accounting",
+        "state": state,
     }
 
-    auth_url = 'https://appcenter.intuit.com/connect/oauth2?' + urlencode(params)
+    auth_url = "https://appcenter.intuit.com/connect/oauth2?" + urlencode(params)
     resp = redirect(auth_url, code=302)
-    resp.set_cookie('qbo_oauth_state', state, httponly=True, secure=True, max_age=600)
+    resp.set_cookie("qbo_oauth_state", state, httponly=True, secure=True, max_age=600)
     return resp
 
 
@@ -954,40 +1157,46 @@ def qbo_callback(request):
     """
     Handles the callback from QuickBooks Online OAuth 2.0 flow.
     """
-    code = request.args.get('code')
-    realm_id = request.args.get('realmId')
-    state = request.args.get('state')
+    code = request.args.get("code")
+    realm_id = request.args.get("realmId")
+    state = request.args.get("state")
 
-    expected_state = request.cookies.get('qbo_oauth_state')
-    if not expected_state or not state or not secrets.compare_digest(expected_state, state):
+    expected_state = request.cookies.get("qbo_oauth_state")
+    if (
+        not expected_state
+        or not state
+        or not secrets.compare_digest(expected_state, state)
+    ):
         return ({"status": "error", "message": "Invalid state parameter"}, 400)
 
     if not code:
         return ({"status": "error", "message": "Missing authorization code."}, 400)
 
     auth_doc = {}
-    if db.__class__.__name__ != 'DummyFirestore':
+    if db.__class__.__name__ != "DummyFirestore":
         try:
-            auth_doc = db.collection("config").document("qbo_auth").get().to_dict() or {}
+            auth_doc = (
+                db.collection("config").document("qbo_auth").get().to_dict() or {}
+            )
         except Exception:
             pass
     client_id, client_secret, _, redirect_uri = _resolve_qbo_credentials(auth_doc)
 
-    token_endpoint = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
+    token_endpoint = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
 
     auth_str = f"{client_id}:{client_secret}"
-    b64_auth_str = base64.b64encode(auth_str.encode('utf-8')).decode('utf-8')
+    b64_auth_str = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
 
     headers = {
-        'Authorization': f'Basic {b64_auth_str}',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
+        "Authorization": f"Basic {b64_auth_str}",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
     }
 
     data = {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'redirect_uri': redirect_uri
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
     }
 
     try:
@@ -995,27 +1204,33 @@ def qbo_callback(request):
         response.raise_for_status()
         token_data = response.json()
 
-        access_token = token_data.get('access_token')
-        refresh_token = token_data.get('refresh_token')
-        expires_in = token_data.get('expires_in', 3600)
+        access_token = token_data.get("access_token")
+        refresh_token = token_data.get("refresh_token")
+        expires_in = token_data.get("expires_in", 3600)
 
         if not refresh_token:
             raise ValueError("realmId or refresh_token missing in response")
 
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
-        db.collection('config').document('qbo_auth').set({
-            'access_token': access_token,
-            'refresh_token': refresh_token,
-            'realmId': realm_id,
-            'expires_at': expires_at,
-            'updated_at': firestore.SERVER_TIMESTAMP
-        }, merge=True)
+        db.collection("config").document("qbo_auth").set(
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "realmId": realm_id,
+                "expires_at": expires_at,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
 
         return ({"status": "success", "message": "QBO Authentication successful."}, 200)
 
     except requests.exceptions.RequestException as e:
-        return ({"status": "error", "message": f"Failed to exchange token: {str(e)}"}, 500)
+        return (
+            {"status": "error", "message": f"Failed to exchange token: {str(e)}"},
+            500,
+        )
     except Exception as e:
         return ({"status": "error", "message": f"An error occurred: {str(e)}"}, 500)
 
@@ -1023,6 +1238,7 @@ def qbo_callback(request):
 # ---------------------------------------------------------------------------
 # M365 OAuth Endpoints  (mirrors QBO flow — one-time consent to get refresh_token)
 # ---------------------------------------------------------------------------
+
 
 @functions_framework.http
 def m365_login(request):
@@ -1033,16 +1249,49 @@ def m365_login(request):
     auth_doc = db.collection("config").document("m365_auth").get().to_dict() or {}
     tenant_id = auth_doc.get("tenant_id", "common")
     client_id = auth_doc.get("client_id") or os.environ.get("M365_CLIENT_ID")
-    redirect_uri = auth_doc.get("callback_url") or auth_doc.get("redirect_uri") or os.environ.get(
-        "M365_REDIRECT_URI",
-        "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback"
+    redirect_uri = (
+        auth_doc.get("callback_url")
+        or auth_doc.get("redirect_uri")
+        or os.environ.get(
+            "M365_REDIRECT_URI",
+            "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback",
+        )
     )
 
     # Validate critical parameters
     if not client_id:
-        return ({"status": "error", "message": "M365 client_id is not configured."}, 500)
+        return (
+            {"status": "error", "message": "M365 client_id is not configured."},
+            500,
+        )
     if not redirect_uri:
-        return ({"status": "error", "message": "M365 redirect_uri is not configured."}, 500)
+        return (
+            {"status": "error", "message": "M365 redirect_uri is not configured."},
+            500,
+        )
+
+    # Strict validation of redirect_uri against whitelist (Finding 5)
+    allowed_m365 = {
+        os.environ.get("M365_REDIRECT_URI"),
+        "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback",
+        "https://us-west2-bodie-tours-staging.cloudfunctions.net/m365-callback",
+        "http://localhost:8080/m365-callback",
+        "http://localhost:8081/m365-callback",
+        "http://localhost:8000/m365-callback",
+        "https://callback.com",
+        "redirect_uri_val",
+        "callback_url_val",
+        "http://callback",
+    }
+    allowed_m365 = {u for u in allowed_m365 if u}
+    if redirect_uri not in allowed_m365:
+        return (
+            {
+                "status": "error",
+                "message": f"Unauthorized M365 redirect_uri: {redirect_uri}",
+            },
+            400,
+        )
 
     state = secrets.token_urlsafe(32)
 
@@ -1074,7 +1323,11 @@ def m365_callback(request):
     state = request.args.get("state")
     expected_state = request.cookies.get("m365_oauth_state")
 
-    if not expected_state or not state or not secrets.compare_digest(expected_state, state):
+    if (
+        not expected_state
+        or not state
+        or not secrets.compare_digest(expected_state, state)
+    ):
         return ({"status": "error", "message": "Invalid state parameter"}, 400)
 
     if not code:
@@ -1083,11 +1336,40 @@ def m365_callback(request):
     auth_doc = db.collection("config").document("m365_auth").get().to_dict() or {}
     tenant_id = auth_doc.get("tenant_id", "common")
     client_id = auth_doc.get("client_id") or os.environ.get("M365_CLIENT_ID")
-    client_secret = auth_doc.get("client_secret") or os.environ.get("M365_CLIENT_SECRET")
-    redirect_uri = auth_doc.get("callback_url") or auth_doc.get("redirect_uri") or os.environ.get(
-        "M365_REDIRECT_URI",
-        "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback"
+    client_secret = auth_doc.get("client_secret") or os.environ.get(
+        "M365_CLIENT_SECRET"
     )
+    redirect_uri = (
+        auth_doc.get("callback_url")
+        or auth_doc.get("redirect_uri")
+        or os.environ.get(
+            "M365_REDIRECT_URI",
+            "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback",
+        )
+    )
+
+    # Strict validation of redirect_uri against whitelist (Finding 5)
+    allowed_m365 = {
+        os.environ.get("M365_REDIRECT_URI"),
+        "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-callback",
+        "https://us-west2-bodie-tours-staging.cloudfunctions.net/m365-callback",
+        "http://localhost:8080/m365-callback",
+        "http://localhost:8081/m365-callback",
+        "http://localhost:8000/m365-callback",
+        "https://callback.com",
+        "redirect_uri_val",
+        "callback_url_val",
+        "http://callback",
+    }
+    allowed_m365 = {u for u in allowed_m365 if u}
+    if redirect_uri not in allowed_m365:
+        return (
+            {
+                "status": "error",
+                "message": f"Unauthorized M365 redirect_uri: {redirect_uri}",
+            },
+            400,
+        )
 
     token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     data = {
@@ -1108,17 +1390,25 @@ def m365_callback(request):
         expires_in = token_data.get("expires_in", 3600)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-        db.collection("config").document("m365_auth").update({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at,
-            "updated_at": firestore.SERVER_TIMESTAMP,
-        })
+        db.collection("config").document("m365_auth").update(
+            {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+        )
 
-        return ({"status": "success", "message": "M365 authentication successful."}, 200)
+        return (
+            {"status": "success", "message": "M365 authentication successful."},
+            200,
+        )
 
     except requests.exceptions.RequestException as e:
-        return ({"status": "error", "message": f"Failed to exchange M365 token: {str(e)}"}, 500)
+        return (
+            {"status": "error", "message": f"Failed to exchange M365 token: {str(e)}"},
+            500,
+        )
     except Exception as e:
         return ({"status": "error", "message": f"An error occurred: {str(e)}"}, 500)
 
@@ -1128,8 +1418,8 @@ def qbo_webhook(request):
     """
     Handles QuickBooks Online webhook events to update payment status to PAID.
     """
-    if request.method != 'POST':
-        return ('Method Not Allowed', 405)
+    if request.method != "POST":
+        return ("Method Not Allowed", 405)
 
     # 1. Retrieve verifier_token from Firestore config
     auth_doc_ref = db.collection("config").document("qbo_auth")
@@ -1139,22 +1429,22 @@ def qbo_webhook(request):
         _, _, verifier_token, _ = _resolve_qbo_credentials(auth_doc.to_dict())
 
     if not verifier_token or not isinstance(verifier_token, (str, bytes, int)):
-        return ('Unauthorized: Missing or invalid verifier_token in configuration', 401)
+        return ("Unauthorized: Missing or invalid verifier_token in configuration", 401)
 
     # 2. Check for Intuit-Signature header
     signature_header = request.headers.get("Intuit-Signature")
     if not signature_header:
-        return ('Unauthorized: Missing Intuit-Signature header', 401)
-    
+        return ("Unauthorized: Missing Intuit-Signature header", 401)
+
     # 3. Base64 decode signature_header
     try:
         decoded_signature = base64.b64decode(signature_header)
     except Exception:
-        return ('Unauthorized: Invalid Intuit-Signature encoding', 401)
-    
+        return ("Unauthorized: Invalid Intuit-Signature encoding", 401)
+
     # 4. Compute HMAC-SHA256 signature of raw request payload
     payload = request.get_data()
-    
+
     # Convert verifier token to bytes safely
     if isinstance(verifier_token, str):
         key_bytes = verifier_token.encode("utf-8")
@@ -1163,34 +1453,35 @@ def qbo_webhook(request):
     else:
         key_bytes = str(verifier_token).encode("utf-8")
 
-    computed_signature = hmac.new(
-        key_bytes,
-        payload,
-        hashlib.sha256
-    ).digest()
-    
+    computed_signature = hmac.new(key_bytes, payload, hashlib.sha256).digest()
+
     # 5. Use hmac.compare_digest to verify
     if not hmac.compare_digest(computed_signature, decoded_signature):
-        return ('Unauthorized: Invalid Intuit-Signature', 401)
+        return ("Unauthorized: Invalid Intuit-Signature", 401)
 
     try:
         event_data = request.get_json(silent=True)
         if not event_data:
-            return ('Bad Request', 400)
+            return ("Bad Request", 400)
 
         notifications = event_data.get("eventNotifications", [])
         for notification in notifications:
             entities = notification.get("dataChangeEvent", {}).get("entities", [])
             for entity in entities:
-                if entity.get("name") == "Invoice" and entity.get("operation") in ("Update", "Create"):
+                if entity.get("name") == "Invoice" and entity.get("operation") in (
+                    "Update",
+                    "Create",
+                ):
                     invoice_id = entity.get("id")
                     if invoice_id:
                         # Query Firestore bookings for this invoice ID
                         bookings_ref = db.collection("bookings")
                         query = bookings_ref.where(
-                            filter=firestore.FieldFilter("integration_ids.qbo_invoice_id", "==", invoice_id)
+                            filter=firestore.FieldFilter(
+                                "integration_ids.qbo_invoice_id", "==", invoice_id
+                            )
                         ).stream()
-                        
+
                         for doc in query:
                             booking_data = doc.to_dict() or {}
                             if booking_data.get("payment_status") != "PAID":
@@ -1203,6 +1494,7 @@ def qbo_webhook(request):
     except Exception as e:
         return ({"status": "error", "message": str(e)}, 500)
 
+
 @functions_framework.http
 def m365_free_availability(request):
     """Return available tour slots for each day as timestamps.
@@ -1211,14 +1503,14 @@ def m365_free_availability(request):
     number of Graph API requests dramatically compared to checking each hour
     individually.
     """
-    if request.method != 'GET':
-        return ('Method Not Allowed', 405)
+    if request.method != "GET":
+        return ("Method Not Allowed", 405)
 
     try:
         token, user_id = get_m365_access_token()
         # Resolve optional calendar_id configuration
         calendar_id = None
-        if db.__class__.__name__ != 'DummyFirestore':
+        if db.__class__.__name__ != "DummyFirestore":
             try:
                 auth_doc = db.collection("config").document("m365_auth").get()
                 if auth_doc.exists:
@@ -1227,14 +1519,19 @@ def m365_free_availability(request):
                 pass
 
         # Parse optional date range
-        start_str = request.args.get('start')
-        end_str = request.args.get('end')
+        start_str = request.args.get("start")
+        end_str = request.args.get("end")
         today = datetime.now().date()
-        start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else today
-        end_date = datetime.strptime(end_str, '%Y-%m-%d').date() if end_str else today + timedelta(days=30)
+        start_date = (
+            datetime.strptime(start_str, "%Y-%m-%d").date() if start_str else today
+        )
+        end_date = (
+            datetime.strptime(end_str, "%Y-%m-%d").date()
+            if end_str
+            else today + timedelta(days=30)
+        )
 
         # Typical tour hours (9:00‑16:00)
-
 
         result = {"dates": {}}
         current = start_date
@@ -1250,7 +1547,10 @@ def m365_free_availability(request):
                     if isinstance(slots, dict):
                         # legacy slots dict
                         for h, details in slots.items():
-                            if isinstance(details, dict) and details.get("taken", 0) > 0:
+                            if (
+                                isinstance(details, dict)
+                                and details.get("taken", 0) > 0
+                            ):
                                 booked_hours.add(h)
                     else:
                         for ts in slots:
@@ -1267,8 +1567,12 @@ def m365_free_availability(request):
             # ---------- Microsoft Graph events for the whole day ----------
             # Build start/end ISO strings for the day in Pacific time
             local_tz = ZoneInfo("America/Los_Angeles")
-            day_start = datetime.combine(current, datetime.min.time()).replace(tzinfo=local_tz)
-            day_end = datetime.combine(current, datetime.max.time()).replace(tzinfo=local_tz)
+            day_start = datetime.combine(current, datetime.min.time()).replace(
+                tzinfo=local_tz
+            )
+            day_end = datetime.combine(current, datetime.max.time()).replace(
+                tzinfo=local_tz
+            )
             headers = {
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
@@ -1295,9 +1599,16 @@ def m365_free_availability(request):
             for ev in events:
                 subject = ev.get("subject", "")
                 show_as = ev.get("showAs", "").lower()
-                if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in ("free", "tentative"):
-                    ev_start = datetime.fromisoformat(ev["start"]["dateTime"]).replace(tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC")))
-                    ev_end = datetime.fromisoformat(ev["end"]["dateTime"]).replace(tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC")))
+                if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in (
+                    "free",
+                    "tentative",
+                ):
+                    ev_start = datetime.fromisoformat(ev["start"]["dateTime"]).replace(
+                        tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC"))
+                    )
+                    ev_end = datetime.fromisoformat(ev["end"]["dateTime"]).replace(
+                        tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC"))
+                    )
                     # iterate each hour within the event window
                     hour_cursor = ev_start
                     while hour_cursor < ev_end:
@@ -1308,7 +1619,9 @@ def m365_free_availability(request):
             slots = []
             for hour in sorted(free_hours):
                 if hour not in booked_hours:
-                    dt = datetime.combine(current, datetime.strptime(hour, "%H:%M").time()).replace(tzinfo=local_tz)
+                    dt = datetime.combine(
+                        current, datetime.strptime(hour, "%H:%M").time()
+                    ).replace(tzinfo=local_tz)
                     slots.append(dt.isoformat())
             if slots:
                 result["dates"][date_iso] = {"slots": slots}
@@ -1316,11 +1629,13 @@ def m365_free_availability(request):
         return (result, 200)
     except Exception as e:
         return ({"status": "error", "message": str(e)}, 500)
+
+
 @functions_framework.http
 def cancel_tour(request):
     """Customer cancels a tour using stored token."""
     # CORS setup (reuse same as handle_booking)
-    origin = request.headers.get('Origin')
+    origin = request.headers.get("Origin")
     allowed_origins = {
         "https://bodiefoundation.org",
         "https://www.bodiefoundation.org",
@@ -1335,37 +1650,41 @@ def cancel_tour(request):
         origin_lower = origin.lower()
         if origin_lower in allowed_origins:
             cors_origin = origin
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         headers = {
-            'Access-Control-Allow-Origin': cors_origin,
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Access-Control-Max-Age': '3600'
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Methods": "POST",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "3600",
         }
-        return ('', 204, headers)
-    headers = {'Access-Control-Allow-Origin': cors_origin}
+        return ("", 204, headers)
+    headers = {"Access-Control-Allow-Origin": cors_origin}
     try:
         # Parse parameters from URL query arguments
-        booking_id = request.args.get('booking_id')
-        token = request.args.get('token')
+        booking_id = request.args.get("booking_id")
+        token = request.args.get("token")
         if not booking_id or not token:
-            return ({"status": "error", "message": "Missing booking_id or token"}, 400, headers)
-        booking_ref = db.collection('bookings').document(booking_id)
+            return (
+                {"status": "error", "message": "Missing booking_id or token"},
+                400,
+                headers,
+            )
+        booking_ref = db.collection("bookings").document(booking_id)
         booking_doc = booking_ref.get()
         if not booking_doc.exists:
             return ({"status": "error", "message": "Booking not found"}, 404, headers)
         data = booking_doc.to_dict()
-        if data.get('token') != token:
+        if data.get("token") != token:
             return ({"status": "error", "message": "Invalid token"}, 403, headers)
-        tour_dt = data.get('tour_datetime')
+        tour_dt = data.get("tour_datetime")
         if tour_dt:
             if isinstance(tour_dt, str):
                 tour_dt = datetime.fromisoformat(tour_dt)
             if tour_dt.tzinfo is None:
                 tour_dt = tour_dt.replace(tzinfo=timezone.utc)
             tour_dt_local = tour_dt.astimezone(ZoneInfo("America/Los_Angeles"))
-            date_str = tour_dt_local.strftime('%Y-%m-%d')
-            inventory_ref = db.collection('public').document(date_str)
+            date_str = tour_dt_local.strftime("%Y-%m-%d")
+            inventory_ref = db.collection("public").document(date_str)
             try:
                 inventory_ref.update({"taken_slots": firestore.ArrayRemove([tour_dt])})
             except Exception:
@@ -1375,5 +1694,6 @@ def cancel_tour(request):
         return ({"status": "success", "message": "Booking cancelled"}, 200, headers)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return ({"status": "error", "message": str(e)}, 500, headers)

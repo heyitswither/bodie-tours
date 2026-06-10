@@ -16,6 +16,7 @@ from typing import Any
 
 _cached_db: Any = None
 
+
 def _get_db() -> Any:
     """Return a Firestore client, using a MagicMock dummy when unavailable.
     The result is cached after first creation.
@@ -29,16 +30,18 @@ def _get_db() -> Any:
         _cached_db = firestore.Client(database="bodie-tours")
     except Exception as e:
         import warnings
+
         warnings.warn(
             f"Firestore client initialization failed ({e}). Using a dummy in-memory client for testing."
         )
-        _cached_db = MagicMock(name='db')
+        _cached_db = MagicMock(name="db")
         _cached_db.collection = MagicMock()
         _cached_db.collection.return_value = MagicMock()
         _cached_db.transaction = MagicMock()
         _cached_db.transaction.return_value = MagicMock()
-        _cached_db.__class__.__name__ = 'DummyFirestore'
+        _cached_db.__class__.__name__ = "DummyFirestore"
     return _cached_db
+
 
 # Backward compatibility: module level db variable
 db = _get_db()
@@ -49,6 +52,7 @@ MAX_CAPACITY = 20
 # ---------------------------------------------------------------------------
 # M365 Token Helper (shared with main.py logic, self-contained here)
 # ---------------------------------------------------------------------------
+
 
 def _get_m365_token_for_prune():
     """Fetch a valid M365 access token from the config/m365_auth Firestore doc."""
@@ -68,7 +72,9 @@ def _get_m365_token_for_prune():
             return access_token, user_id
 
     client_id = auth_data.get("client_id") or os.environ.get("M365_CLIENT_ID")
-    client_secret = auth_data.get("client_secret") or os.environ.get("M365_CLIENT_SECRET")
+    client_secret = auth_data.get("client_secret") or os.environ.get(
+        "M365_CLIENT_SECRET"
+    )
     tenant_id = auth_data.get("tenant_id") or os.environ.get("M365_TENANT_ID", "common")
     refresh_token = auth_data.get("refresh_token")
 
@@ -101,7 +107,18 @@ def _get_m365_token_for_prune():
 # M365 Actions
 # ---------------------------------------------------------------------------
 
-def send_outlook_reminder(access_token, user_id, customer_email, customer_name, tour_datetime_str, booking_id, payment_link=None, party_size=1, token=None):
+
+def send_outlook_reminder(
+    access_token,
+    user_id,
+    customer_email,
+    customer_name,
+    tour_datetime_str,
+    booking_id,
+    payment_link=None,
+    party_size=1,
+    token=None,
+):
     """Send an email reminder via M365 Graph API /sendMail before pruning.
     # Determine environment (production or sandbox)
     environment = os.getenv("QBO_ENVIRONMENT", os.getenv("ENVIRONMENT", "sandbox"))
@@ -116,9 +133,15 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
     - "simple": uses the built‑in default subject/body (current behavior).
     - "custom": loads a Firestore document `email_templates/prune_reminder` with fields `subject` and `body`.
     """
-    api_base_url = os.getenv("API_BASE_URL") or os.getenv("CANCEL_BASE_URL") or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    api_base_url = (
+        os.getenv("API_BASE_URL")
+        or os.getenv("CANCEL_BASE_URL")
+        or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    )
     api_base_url = api_base_url.rstrip("/")
-    cancellation_link = f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token or ''}"
+    cancellation_link = (
+        f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token or ''}"
+    )
 
     # Define simple template with placeholders
     simple_subject = "Reminder: Your Bodie State Park Tour Booking Is Pending Payment"
@@ -140,7 +163,10 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
             subject = tmpl_data.get("subject", simple_subject)
             body = tmpl_data.get("body", simple_body)
         except Exception as exc:
-            logger.exception("Failed to load custom email template; falling back to simple template: %s", exc)
+            logger.exception(
+                "Failed to load custom email template; falling back to simple template: %s",
+                exc,
+            )
             # Fallback to simple template on any error
             subject = simple_subject
             body = simple_body
@@ -152,7 +178,7 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
     # Format placeholders safely
     price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
     total_amount = f"{price * party_size:.2f}"
-    
+
     # 1. Format subject (plain text, NO HTML escaping)
     for key, val in [
         ("customer_name", str(customer_name)),
@@ -161,7 +187,7 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
         ("payment_link", payment_link or ""),
         ("party_size", str(party_size)),
         ("total_amount", total_amount),
-        ("cancellation_link", cancellation_link)
+        ("cancellation_link", cancellation_link),
     ]:
         subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
 
@@ -173,22 +199,22 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
         ("payment_link", html.escape(str(payment_link or ""))),
         ("party_size", html.escape(str(party_size))),
         ("total_amount", html.escape(str(total_amount))),
-        ("cancellation_link", html.escape(str(cancellation_link)))
+        ("cancellation_link", html.escape(str(cancellation_link))),
     ]:
         body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
 
     url = f"https://graph.microsoft.com/v1.0/users/{user_id}/sendMail"
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
     message = {
         "message": {
             "subject": subject,
             "body": {"contentType": "HTML", "content": body},
-            "toRecipients": [{"emailAddress": {"address": customer_email}}]
+            "toRecipients": [{"emailAddress": {"address": customer_email}}],
         },
-        "saveToSentItems": "false"
+        "saveToSentItems": "false",
     }
     response = requests.post(url, headers=headers, json=message, timeout=10)
     return response.status_code in (200, 202)
@@ -197,7 +223,7 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
 def remove_m365_event(access_token, user_id, event_id):
     """Delete an M365 calendar event by its ID."""
     calendar_id = None
-    if db.__class__.__name__ != 'DummyFirestore':
+    if db.__class__.__name__ != "DummyFirestore":
         try:
             auth_doc = db.collection("config").document("m365_auth").get()
             if auth_doc.exists:
@@ -215,10 +241,10 @@ def remove_m365_event(access_token, user_id, event_id):
     return response.status_code == 204
 
 
-
 # ---------------------------------------------------------------------------
 # Dynamic TTL Calculation
 # ---------------------------------------------------------------------------
+
 
 def calculate_ttl(created_at, tour_datetime):
     """
@@ -247,7 +273,9 @@ def calculate_ttl(created_at, tour_datetime):
 
 
 @firestore.transactional
-def process_cancellation_transaction(transaction, booking_ref, inventory_ref, party_size, time_str):
+def process_cancellation_transaction(
+    transaction, booking_ref, inventory_ref, party_size, time_str
+):
     """
     Executes an atomic read-modify-write operation to cancel an unpaid booking
     and return the slots to the inventory.
@@ -265,20 +293,23 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
     inventory_snapshot = inventory_ref.get(transaction=transaction)
     if inventory_snapshot.exists:
         inventory_data = inventory_snapshot.to_dict() or {}
-        
+
         # Update taken_slots array
         from zoneinfo import ZoneInfo
+
         date_str = inventory_ref.id
         local_tz = ZoneInfo("America/Los_Angeles")
         try:
-            slot_dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+            slot_dt = datetime.strptime(
+                f"{date_str} {time_str}", "%Y-%m-%d %H:%M"
+            ).replace(tzinfo=local_tz)
             slot_dt_utc = slot_dt.astimezone(timezone.utc)
         except ValueError:
             slot_dt_utc = None
 
         taken_slots = inventory_data.get("taken_slots", [])
         new_taken_slots = []
-        
+
         for ts in taken_slots:
             matched = False
             is_valid_datetime = True
@@ -287,10 +318,12 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
                     try:
                         ts_val = datetime.fromisoformat(ts)
                     except ValueError:
-                        ts_val = datetime.strptime(ts.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+                        ts_val = datetime.strptime(
+                            ts.strip(), "%Y-%m-%d %H:%M"
+                        ).replace(tzinfo=local_tz)
                 else:
                     ts_val = ts
-                
+
                 if ts_val.tzinfo is None:
                     ts_val = ts_val.replace(tzinfo=timezone.utc)
                 ts_utc = ts_val.astimezone(timezone.utc)
@@ -304,7 +337,7 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
                         matched = True
                 except Exception:
                     pass
-            
+
             if matched:
                 continue
             if is_valid_datetime:
@@ -312,11 +345,11 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
 
         update_payload = {
             "taken_slots": new_taken_slots,
-            "last_updated": firestore.SERVER_TIMESTAMP
+            "last_updated": firestore.SERVER_TIMESTAMP,
         }
         if "slots" in inventory_data:
             update_payload["slots"] = firestore.DELETE_FIELD
-            
+
         transaction.set(inventory_ref, update_payload, merge=True)
 
     # 4. Update booking payment_status
@@ -328,6 +361,7 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
 # Completed Tour Pruning
 # ---------------------------------------------------------------------------
 
+
 def prune_completed_tours(now):
     """
     Silently delete completed (PAID or CANCELLED) tour documents from the previous day.
@@ -336,7 +370,11 @@ def prune_completed_tours(now):
     # Determine yesterday's date boundaries in UTC using local timezone
     local_tz = ZoneInfo("America/Los_Angeles")
     yesterday_date = (now - timedelta(days=1)).astimezone(local_tz).date()
-    yesterday_start = datetime.combine(yesterday_date, datetime.min.time()).replace(tzinfo=local_tz).astimezone(timezone.utc)
+    yesterday_start = (
+        datetime.combine(yesterday_date, datetime.min.time())
+        .replace(tzinfo=local_tz)
+        .astimezone(timezone.utc)
+    )
     yesterday_end = yesterday_start + timedelta(days=1)
 
     completed_statuses = ["PAID", "CANCELLED_UNPAID"]
@@ -363,10 +401,15 @@ def prune_completed_tours(now):
                         if ref_obj and hasattr(ref_obj, "path"):
                             path_str = ref_obj.path
                             if isinstance(path_str, str):
-                                db.collection(path_str.split('/')[0]).document(path_str.split('/')[1]).delete()
+                                db.collection(path_str.split("/")[0]).document(
+                                    path_str.split("/")[1]
+                                ).delete()
                     except Exception:
                         # Best-effort: log and continue
-                        logger.exception("Could not delete doc during pruning: %s", getattr(doc, 'reference', doc))
+                        logger.exception(
+                            "Could not delete doc during pruning: %s",
+                            getattr(doc, "reference", doc),
+                        )
                 pruned_count += 1
             except Exception:
                 logger.exception("Error while deleting completed tour during pruning")
@@ -379,7 +422,6 @@ def prune_completed_tours(now):
 # Main Prune Function
 # ---------------------------------------------------------------
 @functions_framework.http
-
 def prune_unpaid_slots(request):
     """
     HTTP Cloud Function entry point to prune unpaid booking slots.
@@ -444,7 +486,11 @@ def prune_unpaid_slots(request):
 
             if rem_count == 0 and booking_age >= half_ttl and booking_age < ttl:
                 should_send_reminder = True
-            elif rem_count == 1 and booking_age >= quarter_ttl_remaining and booking_age < ttl:
+            elif (
+                rem_count == 1
+                and booking_age >= quarter_ttl_remaining
+                and booking_age < ttl
+            ):
                 should_send_reminder = True
 
             if should_send_reminder and m365_available:
@@ -469,9 +515,13 @@ def prune_unpaid_slots(request):
                     if sent:
                         reminder_count += 1
                         try:
-                            doc.reference.update({"reminder_sent": firestore.Increment(1)})
+                            doc.reference.update(
+                                {"reminder_sent": firestore.Increment(1)}
+                            )
                         except Exception as exc:
-                            logger.exception("Failed to increment reminder_sent: %s", exc)
+                            logger.exception(
+                                "Failed to increment reminder_sent: %s", exc
+                            )
 
             # Cancel the booking if booking age has exceeded TTL (the deadline has passed)
             if booking_age >= ttl:

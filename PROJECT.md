@@ -9,9 +9,9 @@ The Bodie State Park Booking System is a serverless backend integration that man
 |---|----------------|-------|--------|
 | 1 | Database & Codebase Standardization | Transition from legacy `slots` dict to strict unified `taken_slots` array schema across all reservation and pruning transactions. Standardize `tour_datetime` to Firestore Timestamp objects (tz-aware UTC) and use Pacific timezone America/Los_Angeles globally. | **🟢 COMPLETED** |
 | 2 | QBO & M365 Email/Notification Hardening | Enforce caps of at most 2 reminders, with the second reminder sent at quarter TTL. Integrate dynamic cancellation links in receipt and reminder emails, and attach `.ics` calendar invites on successful booking receipts. | **🟢 COMPLETED** |
-| 3 | Security Review Remediation | Remediate all 5 security findings from `SECURITY-REVIEW.md` (HTML injection in calendar events and customer/reminder emails, overly permissive CORS origin echoed matching, and sensitive response text body logging leakage). | **🟢 COMPLETED** |
+| 3 | Security Review Remediation | Remediate all 7 security findings from `SECURITY-REVIEW.md` (HTML injection in calendar events and customer/reminder emails, exact-match CORS origins, sensitive response body leakage, strict redirect_uri validation, and CSRF protection). | **🟢 COMPLETED** |
 | 4 | Token Expiration Robustness | Prevent offset-naive comparison failures by converting naive Firestore timestamps to tz-aware UTC datetimes prior to validation checks, ensuring zero-exception automatic token refreshes. | **🟢 COMPLETED** |
-| 5 | Test Coverage & Visual Verification | Secure 100% statement coverage for main modules (`main.py` and `prune_unpaid_slots.py`), expand the test suite to 243 passing tests, and visually verify frontend widget behaviors (Happy Path, Sold Out, Validation Errors, and Conflicts) using Chrome DevTools. | **🟢 COMPLETED** |
+| 5 | Test Coverage & Visual Verification | Secure 100% statement coverage for main modules (`main.py` and `prune_unpaid_slots.py`), expand the test suite to 250 passing tests, and visually verify frontend widget behaviors (Happy Path, Sold Out, Validation Errors, and Conflicts) using Chrome DevTools. | **🟢 COMPLETED** |
 
 ## Core Contracts & Interfaces
 - **Front-end URL:** `http://localhost:8000/booking_widget.html`

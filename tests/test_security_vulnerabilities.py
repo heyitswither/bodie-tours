@@ -145,3 +145,86 @@ def test_send_outlook_reminder_escaping(mock_db, mock_post):
     # Body should have HTML escaped customer name
     assert html.escape(malicious_name) in message_payload["body"]["content"]
     assert "<i>" not in message_payload["body"]["content"]
+
+
+def test_csrf_token_retrieval_and_cookie_generation():
+    from flask import Request, Flask
+    from werkzeug.test import EnvironBuilder
+    
+    app = Flask(__name__)
+    with app.app_context():
+        # 1. Test GET request on handle_booking returns 200, a CSRF token, and sets the matching HttpOnly cookie
+        builder = EnvironBuilder(method='GET', headers={"Origin": "https://www.bodiefoundation.org"})
+        req = Request(builder.get_environ())
+        
+        response = main.handle_booking(req)
+        # The return is a Flask response object
+        assert response.status_code == 200
+        json_data = response.get_json()
+        assert json_data["status"] == "success"
+        assert "csrf_token" in json_data
+        token = json_data["csrf_token"]
+        
+        # Verify cookie was set
+        cookie_header = response.headers.get("Set-Cookie")
+        assert "csrf_token=" in cookie_header
+        assert "HttpOnly" in cookie_header
+        assert "SameSite=None" in cookie_header
+        assert "Secure" in cookie_header
+
+
+def test_csrf_validation_fails_on_missing_mismatched():
+    from flask import Request, Flask
+    from werkzeug.test import EnvironBuilder
+    
+    # Force db class name to NOT contain Dummy/Mock/Proxy so that CSRF validation is active
+    main.db.__class__.__name__ = "RealProductionClient"
+    
+    app = Flask(__name__)
+    with app.app_context():
+        try:
+            # Test 1: POST request without CSRF cookie or header fails with 400
+            builder = EnvironBuilder(method='POST', json={"date": "2026-06-15", "time": "10:00"})
+            req = Request(builder.get_environ())
+            
+            response, status_code, headers = main.handle_booking(req)
+            assert status_code == 400
+            assert response["status"] == "error"
+            assert "CSRF verification failed" in response["message"]
+            
+            # Test 2: POST request with cookie but mismatched header fails with 400
+            builder = EnvironBuilder(method='POST', json={"date": "2026-06-15", "time": "10:00"}, headers={"X-CSRF-Token": "wrong_token"})
+            req = Request(builder.get_environ())
+            # Manually inject the cookie
+            req.cookies = {"csrf_token": "right_token"}
+            
+            response, status_code, headers = main.handle_booking(req)
+            assert status_code == 400
+            assert response["status"] == "error"
+            assert "CSRF verification failed" in response["message"]
+        finally:
+            # Restore mock state
+            main.db.__class__.__name__ = "MagicMock"
+
+
+def test_strict_redirect_uri_validation():
+    # Test that unauthorized redirect_uri raises ValueError
+    auth_doc_invalid = {
+        "environment": "production",
+        "client_id": "cid",
+        "client_secret": "csec",
+        "callback_url": "https://attacker-site.com/steal-token"
+    }
+    with pytest.raises(ValueError) as excinfo:
+        main._resolve_qbo_credentials(auth_doc_invalid)
+    assert "Unauthorized QBO redirect_uri" in str(excinfo.value)
+    
+    # Test that whitelisted redirect_uri succeeds
+    auth_doc_valid = {
+        "environment": "production",
+        "client_id": "cid",
+        "client_secret": "csec",
+        "callback_url": "https://us-west2-bodie-tours-prod.cloudfunctions.net/qbo-callback"
+    }
+    cid, sec, vt, cb = main._resolve_qbo_credentials(auth_doc_valid)
+    assert cb == "https://us-west2-bodie-tours-prod.cloudfunctions.net/qbo-callback"

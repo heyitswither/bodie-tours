@@ -883,11 +883,25 @@
     };
 
     try {
+      // Fetch CSRF Token first (Double-Submit Cookie protection)
+      let csrfToken = '';
+      try {
+        const csrfResponse = await fetch(BOOKING_API, { method: 'GET', credentials: 'include' });
+        if (csrfResponse.ok) {
+          const csrfData = await csrfResponse.json();
+          csrfToken = csrfData.csrf_token;
+        }
+      } catch (csrfErr) {
+        console.warn("Could not retrieve CSRF token:", csrfErr);
+      }
+
       const response = await fetch(BOOKING_API, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
         },
+        credentials: 'include',
         body: JSON.stringify(payload)
       });
 

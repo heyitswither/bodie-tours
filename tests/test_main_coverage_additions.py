@@ -578,7 +578,7 @@ def test_tc_m22_handle_booking_options_preflight():
     assert status_code == 204
     assert response == ''
     assert resp_headers.get("Access-Control-Allow-Origin") == "https://bodiefoundation.org"
-    assert resp_headers.get("Access-Control-Allow-Methods") == "POST"
+    assert resp_headers.get("Access-Control-Allow-Methods") == "POST, GET"
 
 def test_tc_m23_handle_booking_invalid_date_format():
     req = make_mock_post_request(

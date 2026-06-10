@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 from google.cloud import firestore
 import requests
 
+
 # Initialize Firestore client (cached)
 def _get_db():
     try:
@@ -18,14 +19,27 @@ def _get_db():
     except Exception as e:
         logging.warning(f"Firestore init failed: {e}, using dummy client")
         from unittest.mock import MagicMock
+
         mock_db = MagicMock()
         mock_db.collection = MagicMock()
         return mock_db
 
+
 # Re‑use helpers from existing modules
 from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
 
-def _send_temp_issue_email(access_token, user_id, booking_id, guest_email, guest_name, date_str, time_str, payment_link=None, party_size=1):
+
+def _send_temp_issue_email(
+    access_token,
+    user_id,
+    booking_id,
+    guest_email,
+    guest_name,
+    date_str,
+    time_str,
+    payment_link=None,
+    party_size=1,
+):
     """Send a concise M365 email notifying the user of a temporary issue.
     The email mentions that we are retrying the payment/invoice.
     """
@@ -38,10 +52,21 @@ def _send_temp_issue_email(access_token, user_id, booking_id, guest_email, guest
         f"<p>Thank you,<br/>Bodie State Park Tour Team</p>"
     )
     url = f"https://graph.microsoft.com/v1.0/users/{user_id}/sendMail"
-    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    message = {"message": {"subject": subject, "body": {"contentType": "HTML", "content": body}, "toRecipients": [{"emailAddress": {"address": guest_email}}]}, "saveToSentItems": "false"}
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": body},
+            "toRecipients": [{"emailAddress": {"address": guest_email}}],
+        },
+        "saveToSentItems": "false",
+    }
     resp = requests.post(url, headers=headers, json=message, timeout=10)
     return resp.status_code in (200, 202)
+
 
 @functions_framework.http
 def retry_unpaid_bookings(request):
@@ -55,8 +80,9 @@ def retry_unpaid_bookings(request):
         cutoff = now - timedelta(hours=1)
         bookings_ref = db.collection("bookings")
         pending = (
-            bookings_ref
-            .where(filter=firestore.FieldFilter("payment_status", "==", "PENDING"))
+            bookings_ref.where(
+                filter=firestore.FieldFilter("payment_status", "==", "PENDING")
+            )
             .where(filter=firestore.FieldFilter("created_at", "<=", cutoff))
             .stream()
         )
@@ -90,16 +116,22 @@ def retry_unpaid_bookings(request):
             # Attempt to recreate QBO invoice
             try:
                 qbo_token, realm_id = get_qbo_access_token()
-                invoice_id, payment_link = create_qbo_invoice(qbo_token, realm_id, party_size, guest)
+                invoice_id, payment_link = create_qbo_invoice(
+                    qbo_token, realm_id, party_size, guest
+                )
                 # Update booking document
-                doc.reference.update({
-                    "integration_ids.qbo_invoice_id": invoice_id,
-                    "payment_link": payment_link,
-                    "retry_attempts": retry_attempts + 1,
-                })
+                doc.reference.update(
+                    {
+                        "integration_ids.qbo_invoice_id": invoice_id,
+                        "payment_link": payment_link,
+                        "retry_attempts": retry_attempts + 1,
+                    }
+                )
                 retried += 1
             except Exception as e:
-                logger.error(f"Failed to recreate QBO invoice for booking {doc.id}: {e}")
+                logger.error(
+                    f"Failed to recreate QBO invoice for booking {doc.id}: {e}"
+                )
                 # Still increment retry attempts to avoid endless loops
                 doc.reference.update({"retry_attempts": retry_attempts + 1})
                 continue
@@ -121,15 +153,27 @@ def retry_unpaid_bookings(request):
                     )
                     if sent:
                         emails_sent += 1
-                        doc.reference.update({
-                            "email_sent": True,
-                            "email_sent_count": firestore.Increment(1)
-                        })
+                        doc.reference.update(
+                            {
+                                "email_sent": True,
+                                "email_sent_count": firestore.Increment(1),
+                            }
+                        )
                 except Exception as e:
-                    logger.error(f"Failed to send temp issue email for booking {doc.id}: {e}")
+                    logger.error(
+                        f"Failed to send temp issue email for booking {doc.id}: {e}"
+                    )
 
             processed += 1
-        return ({"status": "success", "processed": processed, "retries": retried, "emails_sent": emails_sent}, 200)
+        return (
+            {
+                "status": "success",
+                "processed": processed,
+                "retries": retried,
+                "emails_sent": emails_sent,
+            },
+            200,
+        )
     except Exception as exc:
         logger.exception("Unexpected error in retry_unpaid_bookings")
         return ({"status": "error", "message": str(exc)}, 500)

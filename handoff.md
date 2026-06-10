@@ -8,10 +8,10 @@ The Bodie State Park serverless booking system is fully hardened against securit
    - **`prune_unpaid_slots.py`** has achieved **100% statement coverage**.
    - **`main.py`** has achieved **100% statement coverage**.
    - **`seed_templates.py`** has achieved **100% statement and branch coverage** with unit tests in `tests/test_seed_templates.py`.
-   - All **243 tests passed** cleanly, including dedicated security and timezone-naive token validation tests.
+   - All **250 tests passed** cleanly, including dedicated security and timezone-naive token validation tests.
 
 2. **Core Feature Achievements & Updates**:
-   - **Vulnerability Remediation:** Resolved all 5 high and medium-severity findings from `SECURITY-REVIEW.md`, including strict HTML escaping of user inputs in M365 events and emails, a secure exact-match lookup set for allowed CORS origins, and response text truncation to block token leakage in logs.
+   - **Vulnerability Remediation:** Resolved all 7 high and medium-severity findings from `SECURITY-REVIEW.md`, including HTML injection prevention (M365 events & customer/reminder emails), exact-match CORS origins, sensitive response body logging truncation, strict redirect_uri whitelist checks, and Double-Submit Cookie CSRF protection.
    - **Token Expiration Timezone Hardening:** Hardened cache checking in M365 and QBO token helpers (`get_m365_access_token`, `get_qbo_access_token`, `_get_m365_token_for_prune`) by converting offset-naive Firestore timestamps to timezone-aware UTC before checking expiration, ensuring seamless, crash-free token refreshes.
    - **Legacy 'slots' Dictionary Removal:** Fully transitioned public database inventory documents to the unified `taken_slots` array schema, completely deleting the old `slots` dict representation during active reservations.
    - **`tour_datetime` Standardization:** Standardized the database schema to store `tour_datetime` as Firestore Timestamps (UTC Raw Datetime) rather than ISO strings.
@@ -39,7 +39,7 @@ The Bodie State Park serverless booking system is fully hardened against securit
    - Cleaned up `requirements.txt` to remove all unneeded libraries (e.g. tensorflow, torch, SpeechRecognition, etc.), keeping only the minimum packages (functions-framework, firestore, google-auth, requests, Flask, pytest, gunicorn).
    - Configured all OAuth endpoints (`qbo_login`, `qbo_callback`, `get_qbo_access_token`, `m365_login`, `m365_callback`, `get_m365_access_token`, `_get_m365_token_for_prune`) to fetch client IDs, client secrets, and redirect URIs from the Firestore `config` collection (documents `qbo_auth` and `m365_auth`) when available, falling back to environment variables.
    - Verified that mock environments are handled safely via type checking to allow offline unit tests to pass.
-   - All **243 tests passed** with **100% code coverage** maintained.
+   - All **250 tests passed** with **100% code coverage** maintained.
 
 6. **Named Database Configuration**:
    - Configured the Firestore Client across all modules (`main.py`, `prune_unpaid_slots.py`, `seed_templates.py`) to connect directly to the named database `bodie-tours` rather than the default `(default)` database.
