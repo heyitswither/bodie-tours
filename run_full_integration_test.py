@@ -9,7 +9,6 @@ The script prints PASS/FAIL messages and exits with 0 on success.
 """
 
 import sys
-import os
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import requests
@@ -21,17 +20,22 @@ COLOR_RED = "\033[91m"
 COLOR_YELLOW = "\033[93m"
 COLOR_RESET = "\033[0m"
 
+
 def print_pass(msg):
     print(f"{COLOR_GREEN}[PASS] {msg}{COLOR_RESET}")
+
 
 def print_fail(msg):
     print(f"{COLOR_RED}[FAIL] {msg}{COLOR_RESET}", file=sys.stderr)
 
+
 def print_warn(msg):
     print(f"{COLOR_YELLOW}[WARN] {msg}{COLOR_RESET}")
 
+
 def print_info(msg):
     print(f"[INFO] {msg}")
+
 
 # ---------- Utility Functions ----------
 def find_available_date_and_slot(db):
@@ -49,16 +53,22 @@ def find_available_date_and_slot(db):
         pass  # Ignore if document does not exist
     # Define the slot at 10:00 AM Pacific Time
     local_tz = ZoneInfo("America/Los_Angeles")
-    slot_local = datetime.combine(tomorrow, datetime.min.time()).replace(hour=10, minute=0, tzinfo=local_tz)
-    # Convert to UTC for Firestore storage
-    slot_utc = slot_local.astimezone(timezone.utc)
+    slot_local = datetime.combine(tomorrow, datetime.min.time()).replace(
+        hour=10, minute=0, tzinfo=local_tz
+    )
     # Store the slot timestamp in Firestore
-    db.collection("public").document(date_str).set({
-        "taken_slots": [],
-        "available": True,
-    }, merge=True)
-    print_warn(f"Created temporary public date {date_str} with 10:00 AM slot for testing.")
+    db.collection("public").document(date_str).set(
+        {
+            "taken_slots": [],
+            "available": True,
+        },
+        merge=True,
+    )
+    print_warn(
+        f"Created temporary public date {date_str} with 10:00 AM slot for testing."
+    )
     return date_str, "10:00"
+
 
 def get_m365_free_time(db, date_str, desired_times=None):
     if desired_times is None:
@@ -78,7 +88,10 @@ def get_m365_free_time(db, date_str, desired_times=None):
         start_str = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         cal_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendarView?startDateTime={start_str}&endDateTime={end_str}"
-        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        }
         resp = requests.get(cal_url, headers=headers, timeout=10)
         resp.raise_for_status()
         events = resp.json().get("value", [])
@@ -87,8 +100,12 @@ def get_m365_free_time(db, date_str, desired_times=None):
             ev_start = ev.get("start", {}).get("dateTime")
             ev_end = ev.get("end", {}).get("dateTime")
             if ev_start and ev_end:
-                start_dt = datetime.fromisoformat(ev_start).astimezone(ZoneInfo("America/Los_Angeles"))
-                end_dt = datetime.fromisoformat(ev_end).astimezone(ZoneInfo("America/Los_Angeles"))
+                start_dt = datetime.fromisoformat(ev_start).astimezone(
+                    ZoneInfo("America/Los_Angeles")
+                )
+                end_dt = datetime.fromisoformat(ev_end).astimezone(
+                    ZoneInfo("America/Los_Angeles")
+                )
                 cur = start_dt
                 while cur < end_dt:
                     busy.add(cur.strftime("%H:%M"))
@@ -100,6 +117,7 @@ def get_m365_free_time(db, date_str, desired_times=None):
     except Exception as e:
         print_warn(f"Failed to determine M365 free time: {e}")
         return None
+
 
 # ---------- Main Test ----------
 def main():
@@ -164,7 +182,9 @@ def main():
             if not booking_doc.exists:
                 raise Exception("Booking document not found in Firestore.")
             integration = (booking_doc.to_dict() or {}).get("integration_ids", {})
-            if not integration.get("qbo_invoice_id") or not integration.get("m365_event_id"):
+            if not integration.get("qbo_invoice_id") or not integration.get(
+                "m365_event_id"
+            ):
                 raise Exception("Integration IDs missing in booking record.")
             print_pass("Invoice and M365 event IDs present in booking record.")
             break
@@ -179,13 +199,16 @@ def main():
         inventory_ref = db.collection("public").document(date_str)
         # Use UTC timezone for timestamp removal to match stored slot
         local_tz = ZoneInfo("America/Los_Angeles")
-        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        dt_local = datetime.strptime(
+            f"{date_str} {time_str}", "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=local_tz)
         dt_utc = dt_local.astimezone(timezone.utc)
         inventory_ref.update({"taken_slots": firestore.ArrayRemove([dt_utc])})
         print_pass("Cleanup of test booking completed.")
     except Exception as e:
         print_warn(f"Cleanup step encountered an issue: {e}")
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
