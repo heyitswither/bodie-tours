@@ -1,7 +1,9 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import sys
-sys.path.insert(0, '.')
+
+sys.path.insert(0, ".")
+
 
 # Mock functions_framework and firestore before importing main
 class DummyFunctionsFramework:
@@ -9,8 +11,9 @@ class DummyFunctionsFramework:
     def http(func):
         return func
 
-if 'functions_framework' not in sys.modules:
-    sys.modules['functions_framework'] = DummyFunctionsFramework
+
+if "functions_framework" not in sys.modules:
+    sys.modules["functions_framework"] = DummyFunctionsFramework
 
 mock_firestore_module = MagicMock()
 # Make the @firestore.transactional decorator a no-op passthrough
@@ -18,11 +21,12 @@ mock_firestore_module.transactional = lambda f: f
 mock_firestore_module.SERVER_TIMESTAMP = "SERVER_TIMESTAMP"
 mock_firestore_module.FieldFilter = MagicMock
 
-if 'google.cloud.firestore' not in sys.modules:
-    sys.modules['google.cloud'] = MagicMock()
-    sys.modules['google.cloud.firestore'] = mock_firestore_module
+if "google.cloud.firestore" not in sys.modules:
+    sys.modules["google.cloud"] = MagicMock()
+    sys.modules["google.cloud.firestore"] = mock_firestore_module
 
 import main
+
 
 def test_process_booking_negative_party_size():
     transaction = MagicMock()
@@ -39,8 +43,9 @@ def test_process_booking_negative_party_size():
             "2026-06-15",
             "10:00",
             -1,  # Negative party size
-            {"name": "Alice"}
+            {"name": "Alice"},
         )
+
 
 def test_process_booking_zero_party_size():
     transaction = MagicMock()
@@ -56,5 +61,5 @@ def test_process_booking_zero_party_size():
             "2026-06-15",
             "10:00",
             0,  # Zero party size
-            {"name": "Alice"}
+            {"name": "Alice"},
         )

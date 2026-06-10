@@ -2,6 +2,7 @@
 Shared conftest helpers for all e2e test tiers.
 Provides the mock_main_db autouse fixture and URL-smart mock_requests_post.
 """
+
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
@@ -58,8 +59,9 @@ def mock_main_db():
     """Patch main.db and prune_unpaid_slots.db with valid token responses."""
     import main
     import prune_unpaid_slots
+
     mock_db = _make_mock_db()
-    with patch('main.db', mock_db), patch('prune_unpaid_slots.db', mock_db):
+    with patch("main.db", mock_db), patch("prune_unpaid_slots.db", mock_db):
         yield mock_db
 
 
@@ -70,11 +72,13 @@ def _url_based_post_response(url, *args, **kwargs):
     resp.raise_for_status = MagicMock()
 
     url_lower = url.lower()
-    if "microsoftonline" in url_lower or ("oauth" in url_lower and "intuit" not in url_lower):
+    if "microsoftonline" in url_lower or (
+        "oauth" in url_lower and "intuit" not in url_lower
+    ):
         resp.json.return_value = {
             "access_token": "mock_m365_token",
             "refresh_token": "mock_refresh",
-            "expires_in": 3600
+            "expires_in": 3600,
         }
     elif "/events" in url_lower and "graph.microsoft" in url_lower:
         resp.status_code = 201
@@ -84,7 +88,7 @@ def _url_based_post_response(url, *args, **kwargs):
             resp.json.return_value = {
                 "access_token": "mock_qbo_token",
                 "refresh_token": "mock_qbo_refresh",
-                "expires_in": 3600
+                "expires_in": 3600,
             }
         else:
             resp.json.return_value = {"Invoice": {"Id": "INV-MOCK-001"}}
@@ -113,8 +117,14 @@ def _url_based_get_response(url, *args, **kwargs):
                 {
                     "subject": "Touring Hours",
                     "showAs": "free",
-                    "start": {"dateTime": "2026-01-01T09:00:00", "timeZone": "Pacific Standard Time"},
-                    "end":   {"dateTime": "2026-12-31T18:00:00", "timeZone": "Pacific Standard Time"},
+                    "start": {
+                        "dateTime": "2026-01-01T09:00:00",
+                        "timeZone": "Pacific Standard Time",
+                    },
+                    "end": {
+                        "dateTime": "2026-12-31T18:00:00",
+                        "timeZone": "Pacific Standard Time",
+                    },
                 }
             ]
         }
@@ -127,7 +137,7 @@ def _url_based_get_response(url, *args, **kwargs):
 @pytest.fixture
 def mock_requests_post():
     """URL-aware requests.post mock. Returns sensible defaults per endpoint."""
-    with patch('requests.post') as mock_post:
+    with patch("requests.post") as mock_post:
         mock_post.side_effect = _url_based_post_response
         yield mock_post
 
@@ -136,6 +146,6 @@ def mock_requests_post():
 def mock_requests_get():
     """URL-aware requests.get mock. Autouse so calendarView is always patched.
     Returns a Touring Hours / Free event covering any time slot by default."""
-    with patch('requests.get') as mock_get:
+    with patch("requests.get") as mock_get:
         mock_get.side_effect = _url_based_get_response
         yield mock_get

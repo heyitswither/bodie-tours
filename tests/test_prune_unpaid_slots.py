@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 # Import the function from the module
 from prune_unpaid_slots import calculate_ttl
 
+
 class TestCalculateTTL(unittest.TestCase):
     def test_ttl_7_days_or_more(self):
         created = datetime(2023, 1, 1, tzinfo=timezone.utc)
@@ -28,6 +29,7 @@ class TestCalculateTTL(unittest.TestCase):
         tour = created + timedelta(hours=12)
         ttl = calculate_ttl(created, tour)
         self.assertEqual(ttl, timedelta(hours=1))
+
 
 if __name__ == "__main__":
     unittest.main()
