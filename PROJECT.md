@@ -1,1 +1,32 @@
-# Project Scope for Bodie State Park Booking Widget\n\n## Overview\nThe project provides a static front‑end booking widget (`booking_widget.html`) served on a local static server (port 8000) and a backend API (port 8081) handling reservation data. The goal is to perform end‑user testing via Chrome DevTools, covering five scenarios and documenting evidence.\n\n## Milestones\n| # | Name | Scope | Dependencies | Status |\n|---|------|-------|--------------|--------|\n| 1 | Exploration | Locate widget file, determine server start commands, verify accessibility | none | DONE (Explorer) |\n| 2 | Interaction Execution | Run Chrome DevTools interactions for five test scenarios, capture screenshots and console logs | 1 | SKIPPED |\n| 3 | Review Artifacts | Verify captured evidence completeness and correctness | 2 | PENDING |\n| 4 | Documentation Update | Update `walkdown.md` with step‑by‑step results and links | 3 | PENDING |\n\n## Interface Contracts\n- Front‑end URL: `http://localhost:8000/booking_widget.html`\n- Backend API Base: `http://localhost:8081/` (REST endpoints as discovered by Explorer)\n\n## Code Layout\n- `/home/freya/bodie-tours/booking_widget.html` – Widget entry point\n- `/home/freya/bodie-tours/...` – Additional static assets (CSS, JS)\n- Backend source (if any) resides under `/home/freya/bodie-tours/backend/` (to be confirmed).\n\n## Test Scenarios (to be executed by Worker)\n1. Happy‑path booking – successful reservation.\n2. Sold‑out slot handling – UI shows unavailable.\n3. Empty month – no availability displayed.\n4. Form validation failures – missing required fields, invalid inputs.\n5. Backend error simulation – API returns error, UI displays message.\n\n## Documentation\n- `walkdown.md` – will contain verification steps, screenshots, console logs, and analysis.\n\n## Tasks\n- Explorer: Completed – provided file locations and commands.\n- Worker: To be dispatched with Chrome DevTools skill.\n- Reviewer: To verify artifacts.\n- Auditor: To ensure integrity of captured evidence.\n
+# Project Scope for Bodie State Park Booking System
+
+## Overview
+The Bodie State Park Booking System is a serverless backend integration that manages visitor tours, reserves inventory in Firestore, creates invoices via QuickBooks Online (QBO), manages scheduling/events in Microsoft 365 (M365), and automatically prunes unpaid or pending slots. This project delivers a fully hardened, production-ready backend alongside the static frontend booking widget.
+
+## Milestones
+
+| # | Milestone Name | Scope | Status |
+|---|----------------|-------|--------|
+| 1 | Database & Codebase Standardization | Transition from legacy `slots` dict to strict unified `taken_slots` array schema across all reservation and pruning transactions. Standardize `tour_datetime` to Firestore Timestamp objects (tz-aware UTC) and use Pacific timezone America/Los_Angeles globally. | **🟢 COMPLETED** |
+| 2 | QBO & M365 Email/Notification Hardening | Enforce caps of at most 2 reminders, with the second reminder sent at quarter TTL. Integrate dynamic cancellation links in receipt and reminder emails, and attach `.ics` calendar invites on successful booking receipts. | **🟢 COMPLETED** |
+| 3 | Security Review Remediation | Remediate all 5 security findings from `SECURITY-REVIEW.md` (HTML injection in calendar events and customer/reminder emails, overly permissive CORS origin echoed matching, and sensitive response text body logging leakage). | **🟢 COMPLETED** |
+| 4 | Token Expiration Robustness | Prevent offset-naive comparison failures by converting naive Firestore timestamps to tz-aware UTC datetimes prior to validation checks, ensuring zero-exception automatic token refreshes. | **🟢 COMPLETED** |
+| 5 | Test Coverage & Visual Verification | Secure 100% statement coverage for main modules (`main.py` and `prune_unpaid_slots.py`), expand the test suite to 243 passing tests, and visually verify frontend widget behaviors (Happy Path, Sold Out, Validation Errors, and Conflicts) using Chrome DevTools. | **🟢 COMPLETED** |
+
+## Core Contracts & Interfaces
+- **Front-end URL:** `http://localhost:8000/booking_widget.html`
+- **Backend API Base:** `http://localhost:8081/` (REST endpoints: `handle_booking`, `cancel_tour`, `qbo_login`, `qbo_callback`, `m365_login`, `m365_callback`, `retry_unpaid_bookings`, etc.)
+- **Named Database:** Dedicated Firestore instance named `bodie-tours`
+
+## Repository Structure
+- `booking_widget.html` – Front-end widget entry point
+- `main.py` – Primary Google Cloud Function endpoint for reservations, CORS, webhooks, and QBO/M365 OAuth
+- `prune_unpaid_slots.py` – Scheduled Google Cloud Function endpoint for calculating TTLs, sending reminders, and transactionally releasing abandoned reservation slots
+- `retry_unpaid_bookings.py` – Background job to retry and rebuild failed invoicing links
+- `verify_integrations.py` – Operations script to test, authorize, and verify third-party API configurations
+- `tests/` – Python unit, integration, and E2E test suites with mock Firestore layers
+
+## Documentation
+- [Walkthrough & Deployment Guide](file:///home/freya/bodie-tours/walkthrough.md) – Step-by-step setup, OAuth configuration, and verification notes
+- [Security Review Report](file:///home/freya/bodie-tours/SECURITY-REVIEW.md) – Log of remediated high-confidence vulnerabilities
+- [System Handoff Report](file:///home/freya/bodie-tours/handoff.md) – Production transition checklist and feature outcomes

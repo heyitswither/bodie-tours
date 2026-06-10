@@ -10,9 +10,12 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Mock firestore before importing prune_unpaid_slots
-mock_firestore = MagicMock()
-mock_firestore.transactional = lambda f: f
-sys.modules['google.cloud.firestore'] = mock_firestore
+if 'google.cloud.firestore' in sys.modules:
+    mock_firestore = sys.modules['google.cloud.firestore']
+else:
+    mock_firestore = MagicMock()
+    mock_firestore.transactional = lambda f: f
+    sys.modules['google.cloud.firestore'] = mock_firestore
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # sys.modules['google.cloud'] = MagicMock(firestore=mock_firestore)
 
 import prune_unpaid_slots
@@ -102,18 +105,24 @@ def test_process_cancellation_transaction():
     mock_transaction = MagicMock()
     mock_booking_ref = MagicMock()
     mock_inventory_ref = MagicMock()
+    mock_inventory_ref.id = "2026-06-15"
     
     mock_booking_snapshot = MagicMock()
     mock_booking_snapshot.exists = True
     mock_booking_snapshot.to_dict.return_value = {"payment_status": "PENDING"}
     mock_booking_ref.get.return_value = mock_booking_snapshot
     
+    from zoneinfo import ZoneInfo
+    local_tz = ZoneInfo("America/Los_Angeles")
+    slot_dt = datetime(2026, 6, 15, 10, 0, tzinfo=local_tz)
+    
     mock_inventory_snapshot = MagicMock()
     mock_inventory_snapshot.exists = True
     mock_inventory_snapshot.to_dict.return_value = {
         "slots": {
             "10:00": {"taken": 5, "status": "AVAILABLE"}
-        }
+        },
+        "taken_slots": [slot_dt]
     }
     mock_inventory_ref.get.return_value = mock_inventory_snapshot
     
@@ -127,8 +136,8 @@ def test_process_cancellation_transaction():
     mock_transaction.set.assert_called_once()
     args, kwargs = mock_transaction.set.call_args
     assert args[0] == mock_inventory_ref
-    assert args[1]["slots"]["10:00"]["taken"] == 3
-    assert args[1]["slots"]["10:00"]["status"] == "AVAILABLE"
+    assert args[1]["taken_slots"] == []
+    assert args[1]["slots"] == prune_unpaid_slots.firestore.DELETE_FIELD
     
     # Verify booking status was updated
     mock_transaction.update.assert_called_once_with(
@@ -170,6 +179,7 @@ def test_pruning_reminder_guest_and_duplicate_prevention(mock_db):
     # Mock config document get
     mock_db.collection.return_value.document.return_value.get.return_value = mock_auth_doc
     
+    prune_unpaid_slots.firestore.Increment.return_value = "increment_sentinel"
     with patch('prune_unpaid_slots.send_outlook_reminder', return_value=True) as mock_send_reminder:
         builder = EnvironBuilder(method='POST')
         request = Request(builder.get_environ())
@@ -178,15 +188,17 @@ def test_pruning_reminder_guest_and_duplicate_prevention(mock_db):
         
         assert status_code == 200
         assert response['reminders_sent'] == 1
+        from zoneinfo import ZoneInfo
+        tour_datetime_str = tour_datetime.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M")
         # Check that send_outlook_reminder was called with the guest's email and name
         mock_send_reminder.assert_called_once_with(
-            "valid_token", "ranger@bodie.gov", "alice@example.com", "Alice Guest", tour_datetime.isoformat(), "booking_guest_abc",
-            payment_link=None, party_size=2
+            "valid_token", "ranger@bodie.gov", "alice@example.com", "Alice Guest", tour_datetime_str, "booking_guest_abc",
+            payment_link=None, party_size=2, token=None
         )
-        # Check that reminder_sent: True was written to Firestore
-        mock_booking_doc.reference.update.assert_called_once_with({"reminder_sent": True})
+        # Check that reminder_sent: "increment_sentinel" was written to Firestore
+        mock_booking_doc.reference.update.assert_called_once_with({"reminder_sent": "increment_sentinel"})
 
-    # 2. Test duplicate prevention: when reminder_sent is True, it should not send email again
+    # 2. Test duplicate prevention: when reminder_sent is 2, it should not send email again
     mock_booking_doc_sent = MagicMock()
     mock_booking_doc_sent.id = "booking_guest_abc"
     mock_booking_doc_sent.to_dict.return_value = {
@@ -198,7 +210,7 @@ def test_pruning_reminder_guest_and_duplicate_prevention(mock_db):
             "name": "Alice Guest",
             "email": "alice@example.com"
         },
-        "reminder_sent": True
+        "reminder_sent": 2
     }
     
     mock_db.collection.return_value.where.return_value.stream.return_value = [mock_booking_doc_sent]

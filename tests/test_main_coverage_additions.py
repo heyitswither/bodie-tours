@@ -503,9 +503,7 @@ def test_tc_m19_process_booking_inventory_exists_not_booked(mock_db):
     mock_snapshot = MagicMock()
     mock_snapshot.exists = True
     mock_snapshot.to_dict.return_value = {
-        "slots": {
-            "10:00": {"taken": 0, "status": "AVAILABLE"}
-        }
+        "taken_slots": []
     }
     inventory_ref.get.return_value = mock_snapshot
     
@@ -523,10 +521,15 @@ def test_tc_m20_process_booking_slot_already_booked(mock_db):
     
     mock_snapshot = MagicMock()
     mock_snapshot.exists = True
+    
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, timezone
+    local_tz = ZoneInfo("America/Los_Angeles")
+    dt_local = datetime.strptime("2026-06-15 10:00", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+    dt_local_utc = dt_local.astimezone(timezone.utc)
+    
     mock_snapshot.to_dict.return_value = {
-        "slots": {
-            "10:00": {"taken": 2, "status": "SOLD_OUT"}
-        }
+        "taken_slots": [dt_local_utc]
     }
     inventory_ref.get.return_value = mock_snapshot
     
@@ -606,12 +609,16 @@ def test_tc_m25_handle_booking_rollback_success(
     mock_process_booking.return_value = "booking_123"
     mock_qbo_token.side_effect = Exception("QBO API Down")
     
+    from zoneinfo import ZoneInfo
+    from datetime import datetime, timezone
+    local_tz = ZoneInfo("America/Los_Angeles")
+    dt_local = datetime.strptime("2026-06-15 10:00", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+    dt_local_utc = dt_local.astimezone(timezone.utc)
+    
     mock_inventory_snapshot = MagicMock()
     mock_inventory_snapshot.exists = True
     mock_inventory_snapshot.to_dict.return_value = {
-        "slots": {
-            "10:00": {"taken": 4, "status": "SOLD_OUT"}
-        }
+        "taken_slots": [dt_local_utc]
     }
     
     mock_inventory_ref = MagicMock()
@@ -652,8 +659,7 @@ def test_tc_m25_handle_booking_rollback_success(
     # Check that rollback updated inventory
     mock_inventory_ref.update.assert_called_once()
     update_data = mock_inventory_ref.update.call_args[0][0]
-    assert update_data["slots"]["10:00"]["status"] == "AVAILABLE"
-    assert update_data["slots"]["10:00"]["taken"] == 0
+    assert update_data["taken_slots"] == []
 
 @patch('main.db')
 @patch('main.get_m365_access_token')
@@ -756,7 +762,7 @@ def test_tc_m25_handle_booking_rollback_time_not_in_slots(
     mock_inventory_snapshot = MagicMock()
     mock_inventory_snapshot.exists = True
     mock_inventory_snapshot.to_dict.return_value = {
-        "slots": {}
+        "taken_slots": []
     }
     
     mock_inventory_ref = MagicMock()
@@ -1510,7 +1516,6 @@ def test_process_booking_taken_slots_coverage():
     mock_snapshot = MagicMock()
     mock_snapshot.exists = True
     mock_snapshot.to_dict.return_value = {
-        "slots": {"10:00": {"taken": 0, "status": "AVAILABLE"}},
         "taken_slots": [requested_dt.isoformat()]
     }
     inventory_ref.get.return_value = mock_snapshot
@@ -1519,7 +1524,6 @@ def test_process_booking_taken_slots_coverage():
 
     # 2. Test valid ISO string not matching requested slot, and invalid string causing ValueError
     mock_snapshot.to_dict.return_value = {
-        "slots": {"10:00": {"taken": 0, "status": "AVAILABLE"}},
         "taken_slots": ["2026-06-15T11:00:00-07:00", "not-a-valid-date-string"]
     }
     # This should succeed since none matching
@@ -1529,7 +1533,6 @@ def test_process_booking_taken_slots_coverage():
     # 3. Test timezone-naive datetime object matching requested slot (it replaces/interprets as UTC)
     naive_dt_matching = requested_dt.astimezone(timezone.utc).replace(tzinfo=None)
     mock_snapshot.to_dict.return_value = {
-        "slots": {"10:00": {"taken": 0, "status": "AVAILABLE"}},
         "taken_slots": [naive_dt_matching]
     }
     with pytest.raises(ValueError, match="This time slot is already booked by another group."):
@@ -1537,7 +1540,6 @@ def test_process_booking_taken_slots_coverage():
 
     # 4. Test timezone-aware datetime object matching requested slot
     mock_snapshot.to_dict.return_value = {
-        "slots": {"10:00": {"taken": 0, "status": "AVAILABLE"}},
         "taken_slots": [requested_dt]
     }
     with pytest.raises(ValueError, match="This time slot is already booked by another group."):

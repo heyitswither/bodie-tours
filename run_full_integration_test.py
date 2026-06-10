@@ -54,7 +54,6 @@ def find_available_date_and_slot(db):
     slot_utc = slot_local.astimezone(timezone.utc)
     # Store the slot timestamp in Firestore
     db.collection("public").document(date_str).set({
-        "slots": firestore.ArrayUnion([slot_utc]),
         "taken_slots": [],
         "available": True,
     }, merge=True)

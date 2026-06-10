@@ -7,7 +7,9 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Ensure google.cloud.firestore is mocked before import
-if 'google.cloud.firestore' not in sys.modules:
+if 'google.cloud.firestore' in sys.modules:
+    mock_firestore = sys.modules['google.cloud.firestore']
+else:
     mock_firestore = MagicMock()
     mock_firestore.transactional = lambda f: f
     sys.modules['google.cloud.firestore'] = mock_firestore
@@ -42,6 +44,22 @@ def test_get_m365_token_valid_cached(mock_db):
     # True path of line 28: returns cached token
     mock_doc = MagicMock()
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    mock_doc.get.return_value.to_dict.return_value = {
+        "user_id": "ranger_123",
+        "access_token": "cached_access_token",
+        "expires_at": expires_at
+    }
+    mock_db.collection.return_value.document.return_value = mock_doc
+
+    token, user_id = prune_unpaid_slots._get_m365_token_for_prune()
+    assert token == "cached_access_token"
+    assert user_id == "ranger_123"
+
+def test_get_m365_token_naive_cached(mock_db):
+    # Test that timezone-naive expires_at is correctly converted to timezone-aware UTC
+    mock_doc = MagicMock()
+    # Create a timezone-naive UTC datetime in the future
+    expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=1)
     mock_doc.get.return_value.to_dict.return_value = {
         "user_id": "ranger_123",
         "access_token": "cached_access_token",
@@ -437,6 +455,7 @@ def test_prune_unpaid_slots_reminders(mock_send, mock_get_token, mock_db):
         mock_dt.now.return_value = now
         mock_dt.fromisoformat = datetime.fromisoformat
 
+        prune_unpaid_slots.firestore.Increment.return_value = "increment_sentinel"
         builder = EnvironBuilder(method='POST')
         request = Request(builder.get_environ())
         response, status = prune_unpaid_slots.prune_unpaid_slots(request)
@@ -444,8 +463,8 @@ def test_prune_unpaid_slots_reminders(mock_send, mock_get_token, mock_db):
         assert status == 200
         # doc1 and doc3 reminders were sent
         assert response["reminders_sent"] == 2
-        mock_doc1.reference.update.assert_called_once_with({"reminder_sent": True})
-        mock_doc3.reference.update.assert_called_once_with({"reminder_sent": True})
+        mock_doc1.reference.update.assert_called_once_with({"reminder_sent": "increment_sentinel"})
+        mock_doc3.reference.update.assert_called_once_with({"reminder_sent": "increment_sentinel"})
 
 @patch('prune_unpaid_slots._get_m365_token_for_prune')
 @patch('prune_unpaid_slots.process_cancellation_transaction')

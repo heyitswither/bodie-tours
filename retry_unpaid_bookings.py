@@ -12,21 +12,15 @@ from google.cloud import firestore
 import requests
 
 # Initialize Firestore client (cached)
-_db = None
-
 def _get_db():
-    global _db
-    if _db is None:
-        try:
-            _db = firestore.Client(database="bodie-tours")
-        except Exception as e:
-            logging.warning(f"Firestore init failed: {e}, using dummy client")
-            from unittest.mock import MagicMock
-            _db = MagicMock()
-            _db.collection = MagicMock()
-    return _db
-
-db = _get_db()
+    try:
+        return firestore.Client(database="bodie-tours")
+    except Exception as e:
+        logging.warning(f"Firestore init failed: {e}, using dummy client")
+        from unittest.mock import MagicMock
+        mock_db = MagicMock()
+        mock_db.collection = MagicMock()
+        return mock_db
 
 # Re‑use helpers from existing modules
 from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
@@ -53,6 +47,7 @@ def _send_temp_issue_email(access_token, user_id, booking_id, guest_email, guest
 def retry_unpaid_bookings(request):
     """Entry point for the retry_unpaid_bookings Cloud Function.
     Triggered via HTTP (e.g., Cloud Scheduler)."""
+    db = _get_db()
     logger = logging.getLogger(__name__)
     try:
         now = datetime.now(timezone.utc)
@@ -77,11 +72,19 @@ def retry_unpaid_bookings(request):
             guest = data.get("guest") or {}
             email = guest.get("email")
             name = guest.get("name", "Guest")
-            date_str = data.get("date") or data.get("tour_datetime")
-            # Ensure we have a date string
-            if isinstance(date_str, datetime):
-                date_str = date_str.strftime("%Y-%m-%d")
-            time_str = data.get("time") or (data.get("tour_datetime").strftime("%H:%M") if isinstance(data.get("tour_datetime"), datetime) else "10:00")
+            tour_datetime = data.get("tour_datetime")
+            if isinstance(tour_datetime, str):
+                tour_datetime = datetime.fromisoformat(tour_datetime)
+            if tour_datetime is not None:
+                if tour_datetime.tzinfo is None:
+                    tour_datetime = tour_datetime.replace(tzinfo=timezone.utc)
+                local_tz = ZoneInfo("America/Los_Angeles")
+                tour_datetime_local = tour_datetime.astimezone(local_tz)
+                date_str = tour_datetime_local.strftime("%Y-%m-%d")
+                time_str = tour_datetime_local.strftime("%H:%M")
+            else:
+                date_str = data.get("date") or "2026-06-15"
+                time_str = data.get("time") or "10:00"
             party_size = data.get("party_size", 1)
 
             # Attempt to recreate QBO invoice

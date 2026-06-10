@@ -22,6 +22,7 @@ def seed_templates():
                          .replace('{{payment_link}}', '{payment_link}')
                          .replace('{{total_amount}}', '{total_amount}')
                          .replace('{{party_size}}', '{party_size}')
+                         .replace('{{cancellation_link}}', '{cancellation_link}')
         )
         
         print("Seeding email_templates/prune_reminder...")
@@ -47,6 +48,7 @@ def seed_templates():
                         .replace('{{party_size}}', '{party_size}')
                         .replace('{{total_amount}}', '{total_amount}')
                         .replace('{{invoice_link}}', '{invoice_link}')
+                        .replace('{{cancellation_link}}', '{cancellation_link}')
         )
         
         print("Seeding email_templates/booking_receipt...")

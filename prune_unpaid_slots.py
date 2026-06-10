@@ -4,6 +4,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 import os
+import html
 from google.cloud import firestore
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
@@ -61,6 +62,8 @@ def _get_m365_token_for_prune():
     expires_at = auth_data.get("expires_at")
 
     if access_token and expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
             return access_token, user_id
 
@@ -78,7 +81,7 @@ def _get_m365_token_for_prune():
     }
     response = requests.post(token_url, data=payload, timeout=10)
     if response.status_code != 200:
-        raise Exception(f"Failed to refresh M365 token: {response.text}")
+        raise Exception(f"Failed to refresh M365 token: {response.text[:100]}")
 
     token_response = response.json()
     new_access_token = token_response.get("access_token")
@@ -98,7 +101,7 @@ def _get_m365_token_for_prune():
 # M365 Actions
 # ---------------------------------------------------------------------------
 
-def send_outlook_reminder(access_token, user_id, customer_email, customer_name, tour_datetime_str, booking_id, payment_link=None, party_size=1):
+def send_outlook_reminder(access_token, user_id, customer_email, customer_name, tour_datetime_str, booking_id, payment_link=None, party_size=1, token=None):
     """Send an email reminder via M365 Graph API /sendMail before pruning.
     # Determine environment (production or sandbox)
     environment = os.getenv("QBO_ENVIRONMENT", os.getenv("ENVIRONMENT", "sandbox"))
@@ -113,6 +116,20 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
     - "simple": uses the built‑in default subject/body (current behavior).
     - "custom": loads a Firestore document `email_templates/prune_reminder` with fields `subject` and `body`.
     """
+    api_base_url = os.getenv("API_BASE_URL") or os.getenv("CANCEL_BASE_URL") or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    api_base_url = api_base_url.rstrip("/")
+    cancellation_link = f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token or ''}"
+
+    # Define simple template with placeholders
+    simple_subject = "Reminder: Your Bodie State Park Tour Booking Is Pending Payment"
+    simple_body = (
+        "<p>Hi {customer_name},</p>"
+        "<p>Your tour booking (ID: <b>{booking_id}</b>) for <b>{tour_datetime_str}</b> is still awaiting payment.</p>"
+        "<p>Please complete your payment soon to avoid automatic cancellation.</p>"
+        "<p>Changed your mind? You can <a href='{cancellation_link}'>cancel your booking here</a>.</p>"
+        "<p>Thank you,<br>Bodie State Park Tour Team</p>"
+    )
+
     # Determine which template to use
     template_type = os.getenv("EMAIL_TEMPLATE_TYPE", "simple").lower()
     if template_type == "custom":
@@ -120,46 +137,45 @@ def send_outlook_reminder(access_token, user_id, customer_email, customer_name, 
         try:
             tmpl_doc = db.collection("email_templates").document("prune_reminder").get()
             tmpl_data = tmpl_doc.to_dict() or {}
-            subject = tmpl_data.get("subject", "Reminder: Your Bodie State Park Tour Booking Is Pending Payment")
-            body = tmpl_data.get("body",
-                f"<p>Hi {customer_name},</p>"
-                f"<p>Your tour booking (ID: <b>{booking_id}</b>) for <b>{tour_datetime_str}</b> is still awaiting payment.</p>"
-                f"<p>Please complete your payment soon to avoid automatic cancellation.</p>"
-                f"<p>Thank you,<br>Bodie State Park Tour Team</p>"
-            )
-            
-            # Format placeholders safely
-            price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
-            total_amount = f"{price * party_size:.2f}"
-            for key, val in [
-                ("customer_name", customer_name),
-                ("booking_id", booking_id),
-                ("tour_datetime_str", tour_datetime_str),
-                ("payment_link", payment_link or ""),
-                ("party_size", str(party_size)),
-                ("total_amount", total_amount)
-            ]:
-                body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
-                subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
+            subject = tmpl_data.get("subject", simple_subject)
+            body = tmpl_data.get("body", simple_body)
         except Exception as exc:
             logger.exception("Failed to load custom email template; falling back to simple template: %s", exc)
             # Fallback to simple template on any error
-            subject = "Reminder: Your Bodie State Park Tour Booking Is Pending Payment"
-            body = (
-                f"<p>Hi {customer_name},</p>"
-                f"<p>Your tour booking (ID: <b>{booking_id}</b>) for <b>{tour_datetime_str}</b> is still awaiting payment.</p>"
-                f"<p>Please complete your payment soon to avoid automatic cancellation.</p>"
-                f"<p>Thank you,<br>Bodie State Park Tour Team</p>"
-            )
+            subject = simple_subject
+            body = simple_body
     else:
         # Simple built‑in template
-        subject = "Reminder: Your Bodie State Park Tour Booking Is Pending Payment"
-        body = (
-            f"<p>Hi {customer_name},</p>"
-            f"<p>Your tour booking (ID: <b>{booking_id}</b>) for <b>{tour_datetime_str}</b> is still awaiting payment.</p>"
-            f"<p>Please complete your payment soon to avoid automatic cancellation.</p>"
-            f"<p>Thank you,<br>Bodie State Park Tour Team</p>"
-        )
+        subject = simple_subject
+        body = simple_body
+
+    # Format placeholders safely
+    price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
+    total_amount = f"{price * party_size:.2f}"
+    
+    # 1. Format subject (plain text, NO HTML escaping)
+    for key, val in [
+        ("customer_name", str(customer_name)),
+        ("booking_id", str(booking_id)),
+        ("tour_datetime_str", str(tour_datetime_str)),
+        ("payment_link", payment_link or ""),
+        ("party_size", str(party_size)),
+        ("total_amount", total_amount),
+        ("cancellation_link", cancellation_link)
+    ]:
+        subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
+
+    # 2. Format body (HTML, MUST HTML-escape placeholder values to prevent XSS / HTML Injection!)
+    for key, val in [
+        ("customer_name", html.escape(str(customer_name))),
+        ("booking_id", html.escape(str(booking_id))),
+        ("tour_datetime_str", html.escape(str(tour_datetime_str))),
+        ("payment_link", html.escape(str(payment_link or ""))),
+        ("party_size", html.escape(str(party_size))),
+        ("total_amount", html.escape(str(total_amount))),
+        ("cancellation_link", html.escape(str(cancellation_link)))
+    ]:
+        body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
 
     url = f"https://graph.microsoft.com/v1.0/users/{user_id}/sendMail"
     headers = {
@@ -248,17 +264,7 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
     # 2. Fetch the corresponding public inventory doc
     inventory_snapshot = inventory_ref.get(transaction=transaction)
     if inventory_snapshot.exists:
-        inventory_data = inventory_snapshot.to_dict()
-        slots_data = inventory_data.get("slots", {})
-
-        time_slot = slots_data.get(time_str, {})
-        current_taken = time_slot.get("taken", 0)
-
-        # 3. Update inventory
-        new_taken = max(0, current_taken - party_size)
-        new_status = "AVAILABLE" if new_taken < MAX_CAPACITY else "SOLD_OUT"
-
-        slots_data[time_str] = {"taken": new_taken, "status": new_status}
+        inventory_data = inventory_snapshot.to_dict() or {}
         
         # Update taken_slots array
         from zoneinfo import ZoneInfo
@@ -272,27 +278,46 @@ def process_cancellation_transaction(transaction, booking_ref, inventory_ref, pa
 
         taken_slots = inventory_data.get("taken_slots", [])
         new_taken_slots = []
-        if slot_dt_utc:
-            for ts in taken_slots:
-                # Handle ts if it is string or datetime
+        
+        for ts in taken_slots:
+            matched = False
+            is_valid_datetime = True
+            try:
                 if isinstance(ts, str):
                     try:
                         ts_val = datetime.fromisoformat(ts)
                     except ValueError:
-                        continue
+                        ts_val = datetime.strptime(ts.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
                 else:
                     ts_val = ts
-                ts_utc = ts_val.astimezone(timezone.utc) if ts_val.tzinfo else ts_val.replace(tzinfo=timezone.utc)
-                if ts_utc != slot_dt_utc:
-                    new_taken_slots.append(ts)
-        else:
-            new_taken_slots = taken_slots
+                
+                if ts_val.tzinfo is None:
+                    ts_val = ts_val.replace(tzinfo=timezone.utc)
+                ts_utc = ts_val.astimezone(timezone.utc)
+                if slot_dt_utc and abs((ts_utc - slot_dt_utc).total_seconds()) < 60:
+                    matched = True
+            except Exception:
+                is_valid_datetime = False
+                try:
+                    local_key = f"{date_str} {time_str}"
+                    if str(ts).strip() == local_key or str(ts).strip() == time_str:
+                        matched = True
+                except Exception:
+                    pass
+            
+            if matched:
+                continue
+            if is_valid_datetime:
+                new_taken_slots.append(ts)
 
-        transaction.set(inventory_ref, {
-            "slots": slots_data,
+        update_payload = {
             "taken_slots": new_taken_slots,
             "last_updated": firestore.SERVER_TIMESTAMP
-        }, merge=True)
+        }
+        if "slots" in inventory_data:
+            update_payload["slots"] = firestore.DELETE_FIELD
+            
+        transaction.set(inventory_ref, update_payload, merge=True)
 
     # 4. Update booking payment_status
     transaction.update(booking_ref, {"payment_status": "CANCELLED_UNPAID"})
@@ -334,9 +359,11 @@ def prune_completed_tours(now):
                 else:
                     # Fallback: attempt to delete via collection/document path if provided
                     try:
-                        path = getattr(doc, "reference", None)
-                        if path and hasattr(path, "path"):
-                            db.collection(path.split('/')[0]).document(path.split('/')[1]).delete()
+                        ref_obj = getattr(doc, "reference", None)
+                        if ref_obj and hasattr(ref_obj, "path"):
+                            path_str = ref_obj.path
+                            if isinstance(path_str, str):
+                                db.collection(path_str.split('/')[0]).document(path_str.split('/')[1]).delete()
                     except Exception:
                         # Best-effort: log and continue
                         logger.exception("Could not delete doc during pruning: %s", getattr(doc, 'reference', doc))
@@ -407,22 +434,26 @@ def prune_unpaid_slots(request):
 
             # Compute TTL based on lead time
             ttl = calculate_ttl(created_at, tour_datetime)
-            # Determine time remaining until the tour starts
-            time_to_tour = tour_datetime - now
+            booking_age = now - created_at
 
-            # Send a reminder email when we are within half of the TTL window before the tour
+            # Send a reminder email when booking age exceeds half of the TTL window (1st) or quarter TTL remaining (2nd)
             half_ttl = ttl / 2
-            if (
-                time_to_tour <= half_ttl
-                and time_to_tour > timedelta(0)
-                and m365_available
-                and not data.get("reminder_sent")
-                and data.get("reminder_sent_count", 0) < 2
-            ):
+            quarter_ttl_remaining = ttl * 0.75
+            rem_count = data.get("reminder_sent", 0)
+            should_send_reminder = False
+
+            if rem_count == 0 and booking_age >= half_ttl and booking_age < ttl:
+                should_send_reminder = True
+            elif rem_count == 1 and booking_age >= quarter_ttl_remaining and booking_age < ttl:
+                should_send_reminder = True
+
+            if should_send_reminder and m365_available:
                 guest = data.get("guest") or data.get("customer") or {}
                 customer_email = guest.get("email")
                 customer_name = guest.get("name", "Guest")
-                tour_datetime_str = tour_datetime.isoformat()
+                local_tz = ZoneInfo("America/Los_Angeles")
+                tour_datetime_local = tour_datetime.astimezone(local_tz)
+                tour_datetime_str = tour_datetime_local.strftime("%Y-%m-%d %H:%M")
                 if customer_email:
                     sent = send_outlook_reminder(
                         m365_token,
@@ -433,30 +464,33 @@ def prune_unpaid_slots(request):
                         doc.id,
                         payment_link=data.get("payment_link"),
                         party_size=data.get("party_size", 1),
+                        token=data.get("token"),
                     )
                     if sent:
                         reminder_count += 1
                         try:
-                            doc.reference.update({"reminder_sent_count": firestore.Increment(1)})
+                            doc.reference.update({"reminder_sent": firestore.Increment(1)})
                         except Exception as exc:
-                            logger.exception("Failed to increment reminder_sent_count: %s", exc)
+                            logger.exception("Failed to increment reminder_sent: %s", exc)
 
-            # Cancel the booking if we are within the TTL window before the tour (i.e., the deadline has passed)
-            if time_to_tour <= ttl and time_to_tour > timedelta(0):
-                # Extract date_str and time_str from tour_datetime
-                date_str = tour_datetime.strftime("%Y-%m-%d")
-                time_str = tour_datetime.strftime("%H:%M")
+            # Cancel the booking if booking age has exceeded TTL (the deadline has passed)
+            if booking_age >= ttl:
+                # Extract date_str and time_str from tour_datetime in local America/Los_Angeles timezone
+                local_tz = ZoneInfo("America/Los_Angeles")
+                tour_datetime_local = tour_datetime.astimezone(local_tz)
+                date_str = tour_datetime_local.strftime("%Y-%m-%d")
+                time_str = tour_datetime_local.strftime("%H:%M")
                 party_size = data.get("party_size", 0)
 
                 inventory_ref = db.collection("public").document(date_str)
-                with db.transaction() as transaction:
-                    success = process_cancellation_transaction(
-                        transaction,
-                        doc.reference,
-                        inventory_ref,
-                        party_size,
-                        time_str,
-                    )
+                transaction = db.transaction()
+                success = process_cancellation_transaction(
+                    transaction,
+                    doc.reference,
+                    inventory_ref,
+                    party_size,
+                    time_str,
+                )
                 if success:
                     cancelled_count += 1
 

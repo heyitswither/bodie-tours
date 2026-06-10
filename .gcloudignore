@@ -15,3 +15,25 @@
 
 node_modules
 #!include:.gitignore
+
+# Explicit exclusions for Google Cloud Function deployment optimization
+.venv/
+venv/
+myenv/
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
+.artifacts/
+.git/
+tests/
+__pycache__/
+*.log
+*.tmp
+*.pyc
+.coverage
+.coverage.*
+trm
+screenshots/
+.aider.*
+.gemini/
+

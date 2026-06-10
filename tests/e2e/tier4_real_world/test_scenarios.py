@@ -3,6 +3,14 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 from google.cloud import firestore
 
+class DummyFieldFilter:
+    def __init__(self, field, op, value):
+        self.field = field
+        self.op = op
+        self.value = value
+
+firestore.FieldFilter = DummyFieldFilter
+
 class MockFirestore:
     def __init__(self):
         self.db = {} # path to data
@@ -21,24 +29,64 @@ class MockFirestore:
         return MockTransaction(self)
 
 class MockCollection:
-    def __init__(self, db_mock, name):
+    def __init__(self, db_mock, name, filters=None):
         self.db_mock = db_mock
         self.name = name
+        self.filters = filters or []
         
     def document(self, doc_id=None):
         if not doc_id:
             doc_id = "auto_id_123"
         return MockDocument(self.db_mock, f"{self.name}/{doc_id}")
         
-    def where(self, filter):
-        return self # simplified
+    def where(self, filter=None, *args, **kwargs):
+        new_filters = list(self.filters)
+        if filter:
+            new_filters.append(filter)
+        return MockCollection(self.db_mock, self.name, new_filters)
         
     def stream(self):
         # find all docs matching
         res = []
         for path, data in self.db_mock.db.items():
             if path.startswith(f"{self.name}/"):
-                res.append(MockDocumentSnapshot(MockDocument(self.db_mock, path), data))
+                match = True
+                for flt in self.filters:
+                    if hasattr(flt, "field") and hasattr(flt, "op") and hasattr(flt, "value"):
+                        field = flt.field
+                        op = flt.op
+                        val = flt.value
+                        
+                        actual_val = data.get(field)
+                        if isinstance(actual_val, str) and isinstance(val, datetime):
+                            try:
+                                if actual_val.endswith("Z"):
+                                    actual_val = actual_val[:-1] + "+00:00"
+                                actual_val = datetime.fromisoformat(actual_val)
+                            except ValueError:
+                                pass
+                        if op == "==":
+                            if actual_val != val:
+                                match = False
+                                break
+                        elif op == "<=":
+                            if actual_val is None or actual_val > val:
+                                match = False
+                                break
+                        elif op == ">=":
+                            if actual_val is None or actual_val < val:
+                                match = False
+                                break
+                        elif op == "<":
+                            if actual_val is None or actual_val >= val:
+                                match = False
+                                break
+                        elif op == ">":
+                            if actual_val is None or actual_val <= val:
+                                match = False
+                                break
+                if match:
+                    res.append(MockDocumentSnapshot(MockDocument(self.db_mock, path), data))
         return res
 
 class MockDocument:
@@ -61,6 +109,10 @@ class MockDocument:
     def update(self, data):
         if self.path in self.db_mock.db:
             self.db_mock.db[self.path].update(data)
+
+    def delete(self):
+        if self.path in self.db_mock.db:
+            del self.db_mock.db[self.path]
 
 class MockDocumentSnapshot:
     def __init__(self, doc, data):
@@ -110,6 +162,7 @@ def setup_post_mock(mock_requests_post, is_available=True):
 # Scenario 1: Normal successful booking, payment, and tour completion
 def test_normal_booking_and_completion(client, mock_requests_post, patch_firestore):
     setup_post_mock(mock_requests_post)
+    patch_firestore.db["public/2026-06-15"] = {"taken_slots": []}
     
     # 1. Booking
     payload = {
@@ -121,9 +174,8 @@ def test_normal_booking_and_completion(client, mock_requests_post, patch_firesto
     resp = client.post('/booking', json=payload)
     assert resp.status_code == 200
     
-    # Check DB state
     assert "public/2026-06-15" in patch_firestore.db
-    assert patch_firestore.db["public/2026-06-15"]["slots"]["10:00"]["taken"] == 2
+    assert len(patch_firestore.db["public/2026-06-15"]["taken_slots"]) == 1
     
     # Check booking doc
     booking_keys = [k for k in patch_firestore.db.keys() if k.startswith("bookings/")]
@@ -147,10 +199,12 @@ def test_normal_booking_and_completion(client, mock_requests_post, patch_firesto
 def test_booking_ttl_expires(client, mock_requests_post, patch_firestore):
     setup_post_mock(mock_requests_post, True)
 
-    # Setup: created 4 hours ago, tour in ~30 hours (1-day lead → TTL = 3h → expired)
-    now = datetime.now(timezone.utc)
-    created_at = now - timedelta(hours=4)  # 4 hours ago — exceeds 3h TTL
-    tour_dt = now + timedelta(hours=30)    # ~30 hours out → "≥ 1 day" lead time → TTL = 3h
+    from zoneinfo import ZoneInfo
+    local_tz = ZoneInfo("America/Los_Angeles")
+    now_local = datetime.now(local_tz)
+    created_at = (now_local - timedelta(hours=4)).astimezone(timezone.utc)
+    tour_dt_local = (now_local + timedelta(hours=30)).replace(second=0, microsecond=0)
+    tour_dt = tour_dt_local.astimezone(timezone.utc)
 
     patch_firestore.db["bookings/b1"] = {
         "tour_datetime": tour_dt.isoformat(),
@@ -159,10 +213,10 @@ def test_booking_ttl_expires(client, mock_requests_post, patch_firestore):
         "payment_status": "PENDING"
     }
     # Setup public inventory
-    date_str = tour_dt.strftime("%Y-%m-%d")
-    time_str = tour_dt.strftime("%H:%M")
+    date_str = tour_dt_local.strftime("%Y-%m-%d")
+    time_str = tour_dt_local.strftime("%H:%M")
     patch_firestore.db[f"public/{date_str}"] = {
-        "slots": {time_str: {"taken": 2, "status": "AVAILABLE"}}
+        "taken_slots": [tour_dt]
     }
 
     # Call prune endpoint
@@ -171,7 +225,7 @@ def test_booking_ttl_expires(client, mock_requests_post, patch_firestore):
 
     # DB state should reflect cancellation (4h > 3h TTL for 30h lead time)
     assert patch_firestore.db["bookings/b1"]["payment_status"] == "CANCELLED_UNPAID"
-    assert patch_firestore.db[f"public/{date_str}"]["slots"][time_str]["taken"] == 0
+    assert patch_firestore.db[f"public/{date_str}"]["taken_slots"] == []
 
 
 # Scenario 3: Booking attempted but no Touring Hours availability

@@ -55,7 +55,7 @@ def _wrap(app_obj, func):
 @pytest.fixture
 def app():
     app = Flask(__name__)
-    app.add_url_rule('/booking', 'handle_booking', _wrap(app, main.handle_booking), methods=['POST', 'OPTIONS'])
+    app.add_url_rule('/booking', 'handle_booking', _wrap(app, main.handle_booking), methods=['POST', 'OPTIONS', 'GET'])
     app.add_url_rule('/qbo/login', 'qbo_login', _wrap(app, main.qbo_login), methods=['GET'])
     app.add_url_rule('/qbo/callback', 'qbo_callback', _wrap(app, main.qbo_callback), methods=['GET'])
     app.add_url_rule('/qbo/webhook', 'qbo_webhook', _wrap(app, main.qbo_webhook), methods=['POST'])

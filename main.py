@@ -6,12 +6,13 @@ import base64
 import secrets
 import hmac
 import hashlib
-from flask import redirect, jsonify
+import html
+from flask import redirect, jsonify, make_response
 from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock
-from prune_unpaid_slots import prune_unpaid_slots
+from prune_unpaid_slots import prune_unpaid_slots, send_outlook_reminder
 import logging
 
 # Initialize Firestore
@@ -96,6 +97,8 @@ def get_m365_access_token():
     expires_at = auth_data.get("expires_at")
 
     if access_token and expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
             return access_token, user_id
 
@@ -114,7 +117,7 @@ def get_m365_access_token():
 
     response = requests.post(token_url, data=payload, timeout=10)
     if response.status_code != 200:
-        raise Exception(f"Failed to refresh M365 token: {response.text}")
+        raise Exception(f"Failed to refresh M365 token: {response.text[:100]}")
 
     token_response = response.json()
     new_access_token = token_response.get("access_token")
@@ -142,8 +145,19 @@ def get_m365_access_token():
 TOURING_HOURS_SUBJECT_PREFIX = "Touring Hours"
 
 
+def _get_zoneinfo(tz_name):
+    if not tz_name:
+        return timezone.utc
+    if tz_name == "Pacific Standard Time":
+        return ZoneInfo("America/Los_Angeles")
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return timezone.utc
+
+
 def check_m365_availability(access_token, user_id, date_str, time_str, calendar_id=None):
-    # Bypass external calls when using dummy DB in tests
+    # Bypass external calls when using dummy DB ins in tests
     if db.__class__.__name__ == 'DummyFirestore':
         return True
     """Whitelist model: booking is only allowed when the ranger has an explicit
@@ -174,7 +188,7 @@ def check_m365_availability(access_token, user_id, date_str, time_str, calendar_
 
     response = requests.get(url, headers=headers, timeout=10)
     if response.status_code != 200:
-        raise Exception(f"Failed to query M365 calendar: {response.text}")
+        raise Exception(f"Failed to query M365 calendar: {response.text[:100]}")
 
     events = response.json().get("value", [])
 
@@ -187,17 +201,6 @@ def check_m365_availability(access_token, user_id, date_str, time_str, calendar_
             subject.startswith(TOURING_HOURS_SUBJECT_PREFIX)
             and show_as in ("free", "tentative")
         ):
-            # Verify it spans the full slot
-            def _get_zoneinfo(tz_name):
-                if not tz_name:
-                    return timezone.utc
-                if tz_name == "Pacific Standard Time":
-                    return ZoneInfo("America/Los_Angeles")
-                try:
-                    return ZoneInfo(tz_name)
-                except Exception:
-                    return timezone.utc
-
             ev_start = datetime.fromisoformat(event["start"]["dateTime"]).replace(
                 tzinfo=_get_zoneinfo(event["start"].get("timeZone"))
             )
@@ -223,15 +226,20 @@ def inject_m365_event(access_token, user_id, date_str, time_str, guest_data, boo
     guest_phone = guest_data.get("phone", "N/A")
     party_size = guest_data.get("party_size", "N/A")
 
+    guest_name_esc = html.escape(str(guest_name))
+    guest_phone_esc = html.escape(str(guest_phone))
+    party_size_esc = html.escape(str(party_size))
+    booking_id_esc = html.escape(str(booking_id))
+
     event_payload = {
         "subject": f"[PENDING] Bodie Tour – {guest_name} (Party of {party_size})",
         "body": {
             "contentType": "HTML",
             "content": (
-                f"<b>Booking ID:</b> {booking_id}<br>"
-                f"<b>Guest:</b> {guest_name}<br>"
-                f"<b>Phone:</b> {guest_phone}<br>"
-                f"<b>Party Size:</b> {party_size}<br>"
+                f"<b>Booking ID:</b> {booking_id_esc}<br>"
+                f"<b>Guest:</b> {guest_name_esc}<br>"
+                f"<b>Phone:</b> {guest_phone_esc}<br>"
+                f"<b>Party Size:</b> {party_size_esc}<br>"
                 f"<b>Status:</b> PENDING PAYMENT"
             )
         },
@@ -257,10 +265,167 @@ def inject_m365_event(access_token, user_id, date_str, time_str, guest_data, boo
 
     response = requests.post(url, headers=headers, json=event_payload, timeout=10)
     if response.status_code not in (200, 201):
-        raise Exception(f"Failed to inject M365 event: {response.text}")
+        raise Exception(f"Failed to inject M365 event: {response.text[:100]}")
 
     event_id = response.json().get("id")
     return event_id
+
+
+def send_booking_receipt_email(booking_id, data):
+    """Fetch booking_receipt template, format it, generate .ics file, and send via M365 Graph API."""
+    try:
+        m365_token, m365_user_id = get_m365_access_token()
+    except Exception as exc:
+        logging.exception("Failed to get M365 access token for receipt email: %s", exc)
+        return False
+
+    guest = data.get("guest") or {}
+    customer_email = guest.get("email")
+    customer_name = guest.get("name", "Guest")
+    if not customer_email:
+        logging.warning("No customer email found for booking %s, skipping receipt email", booking_id)
+        return False
+
+    tour_datetime = data.get("tour_datetime")
+    if isinstance(tour_datetime, str):
+        tour_datetime = datetime.fromisoformat(tour_datetime)
+    if tour_datetime is None:
+        logging.warning("No tour_datetime found for booking %s, skipping receipt email", booking_id)
+        return False
+        
+    if tour_datetime.tzinfo is None:
+        tour_datetime = tour_datetime.replace(tzinfo=timezone.utc)
+
+    local_tz = ZoneInfo("America/Los_Angeles")
+    tour_datetime_local = tour_datetime.astimezone(local_tz)
+    tour_datetime_str = tour_datetime_local.strftime("%Y-%m-%d %I:%M %p %Z")
+
+    # Generate ICS calendar invite
+    summary = "Bodie State Park Tour"
+    description = f"Bodie State Park Tour booking receipt. Booking ID: {booking_id}. Party size: {data.get('party_size', 1)}."
+    location = "Bodie State Park Visitor Center"
+    
+    # Format dates for ICS (UTC)
+    dt_utc = tour_datetime.astimezone(timezone.utc)
+    dtstart = dt_utc.strftime("%Y%m%dT%H%M%SZ")
+    dtend = (dt_utc + timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Bodie State Park Tours//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:REQUEST",
+        "BEGIN:VEVENT",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"DTEND:{dtend}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{description}",
+        f"LOCATION:{location}",
+        f"UID:booking_{booking_id}_{dtstart}@bodie.gov",
+        "SEQUENCE:0",
+        "STATUS:CONFIRMED",
+        "TRANSP:OPAQUE",
+        "END:VEVENT",
+        "END:VCALENDAR"
+    ]
+    ics_content = "\r\n".join(ics_lines)
+    ics_base64 = base64.b64encode(ics_content.encode("utf-8")).decode("utf-8")
+
+    # Fetch template
+    subject = "Receipt: Your Bodie State Park Tour Booking Is Confirmed"
+    body = ""
+    try:
+        tmpl_doc = db.collection("email_templates").document("booking_receipt").get()
+        if tmpl_doc.exists:
+            tmpl_data = tmpl_doc.to_dict() or {}
+            subject = tmpl_data.get("subject", subject)
+            body = tmpl_data.get("body", "")
+    except Exception as exc:
+        logging.exception("Failed to load booking_receipt template from Firestore: %s", exc)
+
+    api_base_url = os.getenv("API_BASE_URL") or os.getenv("CANCEL_BASE_URL") or "https://us-west2-bodie-tours-prod.cloudfunctions.net"
+    api_base_url = api_base_url.rstrip("/")
+    token = data.get("token") or ""
+    cancellation_link = f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token}"
+
+    if not body:
+        # Fallback to a simple HTML body if not found/error
+        body = (
+            "<p>Hi {customer_name},</p>"
+            "<p>Thank you for booking a tour with us. We have received your payment, and your reservation is confirmed!</p>"
+            "<p><b>Booking ID:</b> {booking_id}<br>"
+            "<b>Tour Date & Time:</b> {tour_datetime_str}<br>"
+            "<b>Party Size:</b> {party_size} guests</p>"
+            "<p>Please find attached the calendar invite for your tour.</p>"
+            "<p>Need to change your plans? You can <a href='{cancellation_link}'>cancel your booking here</a>.</p>"
+            "<p>Thank you,<br>Bodie State Park Tour Team</p>"
+        )
+
+    # Format placeholders safely
+    price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
+    total_amount = f"{price * data.get('party_size', 1):.2f}"
+    
+    # 1. Format subject (plain text, NO HTML escaping)
+    for key, val in [
+        ("customer_name", str(customer_name)),
+        ("booking_id", str(booking_id)),
+        ("tour_datetime_str", str(tour_datetime_str)),
+        ("payment_link", data.get("payment_link") or ""),
+        ("invoice_link", data.get("payment_link") or ""),
+        ("party_size", str(data.get("party_size", 1))),
+        ("total_amount", total_amount),
+        ("cancellation_link", cancellation_link)
+    ]:
+        subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
+
+    # 2. Format body (HTML, MUST HTML-escape placeholder values to prevent XSS / HTML Injection!)
+    for key, val in [
+        ("customer_name", html.escape(str(customer_name))),
+        ("booking_id", html.escape(str(booking_id))),
+        ("tour_datetime_str", html.escape(str(tour_datetime_str))),
+        ("payment_link", html.escape(str(data.get("payment_link") or ""))),
+        ("invoice_link", html.escape(str(data.get("payment_link") or ""))),
+        ("party_size", html.escape(str(data.get("party_size", 1)))),
+        ("total_amount", html.escape(str(total_amount))),
+        ("cancellation_link", html.escape(str(cancellation_link)))
+    ]:
+        body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
+
+    # Send mail via Microsoft Graph with attachment
+    url = f"https://graph.microsoft.com/v1.0/users/{m365_user_id}/sendMail"
+    headers = {
+        "Authorization": f"Bearer {m365_token}",
+        "Content-Type": "application/json"
+    }
+    message = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "HTML", "content": body},
+            "toRecipients": [{"emailAddress": {"address": customer_email}}],
+            "attachments": [
+                {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": "invite.ics",
+                    "contentType": "text/calendar",
+                    "contentBytes": ics_base64
+                }
+            ]
+        },
+        "saveToSentItems": "false"
+    }
+
+    if db.__class__.__name__ == "DummyFirestore":
+        logging.info("Mock sending receipt email for booking %s to %s", booking_id, customer_email)
+        return True
+
+    res = requests.post(url, headers=headers, json=message, timeout=10)
+    if res.status_code not in (200, 202, 201):
+        logging.error("Failed to send receipt email via M365: %s", res.text[:100])
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +498,8 @@ def get_qbo_access_token():
 
     # Return cached token if still valid
     if access_token and expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
             return access_token, realm_id
 
@@ -416,7 +583,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
         timeout=10,
     )
     if response.status_code not in (200, 201):
-        raise Exception(f"Failed to create QBO invoice: {response.text}")
+        raise Exception(f"Failed to create QBO invoice: {response.text[:100]}")
     response_data = response.json()
     invoice = response_data.get("Invoice", {})
     invoice_id = invoice.get("Id")
@@ -451,96 +618,64 @@ def process_booking_transaction(transaction, inventory_ref, date_str, time_str, 
     snapshot = inventory_ref.get(transaction=transaction)
 
     if not snapshot.exists:
-        inventory_data = {"date": date_str, "slots": {}, "last_updated": firestore.SERVER_TIMESTAMP}
-        slots = {}
+        inventory_data = {"date": date_str, "taken_slots": [], "last_updated": firestore.SERVER_TIMESTAMP}
+        taken_slots_raw = []
     else:
         inventory_data = snapshot.to_dict() or {}
-        slots = inventory_data.get("slots", {})
         taken_slots_raw = inventory_data.get("taken_slots", [])
-        # Normalize taken_slots to local YYYY-MM-DD HH:MM strings (America/Los_Angeles)
-        normalized_taken = []
-        local_tz_check = ZoneInfo("America/Los_Angeles")
-        for ts in taken_slots_raw:
+
+    # Normalize taken_slots to local YYYY-MM-DD HH:MM strings (America/Los_Angeles)
+    normalized_taken = []
+    local_tz_check = ZoneInfo("America/Los_Angeles")
+    if not isinstance(taken_slots_raw, list):
+        taken_slots_raw = []
+    for ts in taken_slots_raw:
+        try:
+            if isinstance(ts, str):
+                parsed = datetime.fromisoformat(ts)
+            else:
+                parsed = ts
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed_local = parsed.astimezone(local_tz_check)
+            normalized_taken.append(parsed_local.strftime("%Y-%m-%d %H:%M"))
+        except Exception:
             try:
-                if isinstance(ts, str):
-                    parsed = datetime.fromisoformat(ts)
-                else:
-                    parsed = ts
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                parsed_local = parsed.astimezone(local_tz_check)
-                normalized_taken.append(parsed_local.strftime("%Y-%m-%d %H:%M"))
+                normalized_taken.append(str(ts))
             except Exception:
-                try:
-                    normalized_taken.append(str(ts))
-                except Exception:
-                    pass
+                pass
 
-    # Support two slot schema patterns and prefer current 'taken_slots' schema.
-    slot_token = dt_local_utc.isoformat()
+    # Compare requested slot with existing taken slots using local timezone string representation
+    local_key = dt_local.strftime("%Y-%m-%d %H:%M")
+    if local_key in normalized_taken:
+        raise ValueError("This time slot is already booked by another group.")
 
-    # If taken_slots exists, use it as the canonical source of truth (compare in local timezone)
-    if 'normalized_taken' in locals() and normalized_taken:
-        # compare local formatted strings
-        local_key = dt_local.strftime("%Y-%m-%d %H:%M")
-        if local_key in normalized_taken:
+    # Check legacy slots dict if it exists
+    slots_dict = inventory_data.get("slots", {})
+    if isinstance(slots_dict, dict) and slots_dict:
+        current = slots_dict.get(time_key)
+        if isinstance(current, dict) and current.get("taken", 0) > 0:
             raise ValueError("This time slot is already booked by another group.")
 
-    if 'taken_slots' in inventory_data:
-        # current schema uses taken_slots list
-        new_taken = list(normalized_taken)
-        local_key = dt_local.strftime("%Y-%m-%d %H:%M")
-        if local_key in new_taken:
-            raise ValueError("This time slot is already booked by another group.")
-        # append the booking as local formatted string
-        new_taken.append(local_key)
-        transaction.set(inventory_ref, {
-            "date": date_str,
-            "taken_slots": new_taken,
-            "last_updated": firestore.SERVER_TIMESTAMP
-        }, merge=True)
+    # Save the reservation to the 'taken_slots' list as a UTC datetime object (Firestore Timestamp)
+    new_taken = list(taken_slots_raw)
+    new_taken.append(dt_local_utc)
 
-    elif isinstance(slots, dict):
-        # legacy dict mapping time_str -> {"taken": int, "status": str}
-        current = slots.get(time_key) or {"taken": 0, "status": "AVAILABLE"}
-        # One-group-per-slot rule: reject if this slot already taken
-        if current.get("taken", 0) > 0:
-            raise ValueError("This time slot is already booked by another group.")
-        # Also check normalized taken list just in case
-        if 'normalized_taken' in locals() and slot_token in normalized_taken:
-            raise ValueError("This time slot is already booked by another group.")
+    # Set the updated inventory document (removing any legacy 'slots' dict to fulfill "remove old slots dict")
+    transaction.set(inventory_ref, {
+        "date": date_str,
+        "taken_slots": new_taken,
+        "last_updated": firestore.SERVER_TIMESTAMP
+    }, merge=True)
 
-        current["taken"] = party_size
-        current["status"] = "AVAILABLE" if current["taken"] < MAX_GROUP_SIZE else "SOLD_OUT"
-        slots[time_key] = current
-
-        transaction.set(inventory_ref, {
-            "date": date_str,
-            "slots": slots,
-            "last_updated": firestore.SERVER_TIMESTAMP
-        }, merge=True)
-    else:
-        # No recognizable schema; create taken_slots list and add the token
-        transaction.set(inventory_ref, {
-            "date": date_str,
-            "taken_slots": [slot_token],
-            "last_updated": firestore.SERVER_TIMESTAMP
-        }, merge=True)
-        slots_list.append(slot_token)
-        transaction.set(inventory_ref, {
-            "date": date_str,
-            "slots": slots_list,
-            "last_updated": firestore.SERVER_TIMESTAMP
-        }, merge=True)
-
-    # 5. Stage Write 2: Create the private booking record (store tour_datetime as ISO string)
+    # 5. Stage Write 2: Create the private booking record (store tour_datetime as Firestore Timestamp)
     new_booking_ref = db.collection("bookings").document()
 
     booking_payload = {
-        "tour_datetime": dt_local_utc.isoformat(),
+        "tour_datetime": dt_local_utc,
         "party_size": party_size,
         "payment_status": "PENDING",
-        "reminder_sent": False,
+        "reminder_sent": 0,
         "created_at": firestore.SERVER_TIMESTAMP,
         "guest": customer_data,
         "integration_ids": {
@@ -565,32 +700,53 @@ def handle_booking(request):
     """
     # --- CORS Configuration ---
     origin = request.headers.get('Origin')
-    allowed_origins = [
+    allowed_origins = {
         "https://bodiefoundation.org",
-        "https://www.bodiefoundation.org"
-    ]
+        "https://www.bodiefoundation.org",
+        "https://site.squarespace.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "http://localhost:8000",
+        "http://localhost:8081",
+    }
     cors_origin = "https://www.bodiefoundation.org"  # default secure origin
 
     if origin:
         origin_lower = origin.lower()
-        if (
-            origin_lower in allowed_origins
-            or origin_lower.endswith(".squarespace.com")
-            or "localhost" in origin_lower
-            or "127.0.0.1" in origin_lower
-        ):
+        if origin_lower in allowed_origins:
             cors_origin = origin
 
     if request.method == 'OPTIONS':
         headers = {
             'Access-Control-Allow-Origin': cors_origin,
-            'Access-Control-Allow-Methods': 'POST',
-            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Methods': 'POST, GET',
+            'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token',
+            'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '3600'
         }
         return ('', 204, headers)
 
-    headers = {'Access-Control-Allow-Origin': cors_origin}
+    headers = {
+        'Access-Control-Allow-Origin': cors_origin,
+        'Access-Control-Allow-Credentials': 'true'
+    }
+
+    if request.method == 'GET':
+        csrf_token = secrets.token_urlsafe(32)
+        resp = make_response(jsonify({"status": "success", "csrf_token": csrf_token}))
+        resp.headers['Access-Control-Allow-Origin'] = cors_origin
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-CSRF-Token'
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.set_cookie('csrf_token', csrf_token, httponly=True, secure=True, samesite='None')
+        return resp
+
+    # Validate CSRF for write/POST requests (except in DummyFirestore/test mock environment)
+    is_dummy = (db.__class__.__name__ == 'DummyFirestore' or os.getenv("FORCE_DUMMY_DB") == "1")
+    if not is_dummy:
+        csrf_cookie = request.cookies.get('csrf_token')
+        csrf_header = request.headers.get('X-CSRF-Token') or (request.get_json(silent=True) or {}).get('csrf_token')
+        if not csrf_cookie or not csrf_header or not secrets.compare_digest(csrf_cookie, csrf_header):
+            return ({"status": "error", "message": "CSRF verification failed."}, 400, headers)
 
     try:
         request_json = request.get_json(silent=True) or {}
@@ -609,6 +765,9 @@ def handle_booking(request):
             datetime.strptime(time_str, "%H:%M")
         except ValueError:
             return ({"status": "error", "message": "Invalid time format. Expected HH:MM."}, 409, headers)
+
+        local_tz = ZoneInfo("America/Los_Angeles")
+        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
 
         guest_name = str(guest_data.get("name", "") or "Test Guest").strip()[:100]
         guest_email = str(guest_data.get("email", "") or "test@example.com").strip()[:100]
@@ -840,6 +999,9 @@ def qbo_callback(request):
         refresh_token = token_data.get('refresh_token')
         expires_in = token_data.get('expires_in', 3600)
 
+        if not refresh_token:
+            raise ValueError("realmId or refresh_token missing in response")
+
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
         db.collection('config').document('qbo_auth').set({
@@ -1030,8 +1192,11 @@ def qbo_webhook(request):
                         ).stream()
                         
                         for doc in query:
-                            # Update payment status to PAID
-                            doc.reference.update({"payment_status": "PAID"})
+                            booking_data = doc.to_dict() or {}
+                            if booking_data.get("payment_status") != "PAID":
+                                doc.reference.update({"payment_status": "PAID"})
+                                booking_data["payment_status"] = "PAID"
+                                send_booking_receipt_email(doc.id, booking_data)
 
         return ({"status": "success"}, 200)
 
@@ -1049,117 +1214,126 @@ def m365_free_availability(request):
     if request.method != 'GET':
         return ('Method Not Allowed', 405)
 
-    token, user_id = get_m365_access_token()
-    # Resolve optional calendar_id configuration
-    calendar_id = None
-    if db.__class__.__name__ != 'DummyFirestore':
-        try:
-            auth_doc = db.collection("config").document("m365_auth").get()
-            if auth_doc.exists:
-                calendar_id = auth_doc.to_dict().get("calendar_id")
-        except Exception:
-            pass
+    try:
+        token, user_id = get_m365_access_token()
+        # Resolve optional calendar_id configuration
+        calendar_id = None
+        if db.__class__.__name__ != 'DummyFirestore':
+            try:
+                auth_doc = db.collection("config").document("m365_auth").get()
+                if auth_doc.exists:
+                    calendar_id = auth_doc.to_dict().get("calendar_id")
+            except Exception:
+                pass
 
-    # Parse optional date range
-    start_str = request.args.get('start')
-    end_str = request.args.get('end')
-    today = datetime.now().date()
-    start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else today
-    end_date = datetime.strptime(end_str, '%Y-%m-%d').date() if end_str else today + timedelta(days=30)
+        # Parse optional date range
+        start_str = request.args.get('start')
+        end_str = request.args.get('end')
+        today = datetime.now().date()
+        start_date = datetime.strptime(start_str, '%Y-%m-%d').date() if start_str else today
+        end_date = datetime.strptime(end_str, '%Y-%m-%d').date() if end_str else today + timedelta(days=30)
 
-    # Typical tour hours (9:00‑16:00)
+        # Typical tour hours (9:00‑16:00)
 
 
-    result = {"dates": {}}
-    current = start_date
-    while current <= end_date:
-        date_iso = current.isoformat()
-        # ---------- Firestore booked slots ----------
-        booked_hours = set()
-        try:
-            inventory_doc = db.collection("public").document(date_iso).get()
-            if inventory_doc.exists:
-                inventory = inventory_doc.to_dict() or {}
-                slots = inventory.get("slots", [])
-                for ts in slots:
-                    # ts may be a Firestore Timestamp or datetime
-                    if hasattr(ts, "to_datetime"):
-                        dt = ts.to_datetime()
+        result = {"dates": {}}
+        current = start_date
+        while current <= end_date:
+            date_iso = current.isoformat()
+            # ---------- Firestore booked slots ----------
+            booked_hours = set()
+            try:
+                inventory_doc = db.collection("public").document(date_iso).get()
+                if inventory_doc.exists:
+                    inventory = inventory_doc.to_dict() or {}
+                    slots = inventory.get("taken_slots") or inventory.get("slots") or []
+                    if isinstance(slots, dict):
+                        # legacy slots dict
+                        for h, details in slots.items():
+                            if isinstance(details, dict) and details.get("taken", 0) > 0:
+                                booked_hours.add(h)
                     else:
-                        dt = ts
-                    if isinstance(dt, datetime):
-                        booked_hours.add(dt.strftime("%H:%M"))
-        except Exception:
-            pass
+                        for ts in slots:
+                            # ts may be a Firestore Timestamp or datetime
+                            if hasattr(ts, "to_datetime"):
+                                dt = ts.to_datetime()
+                            else:
+                                dt = ts
+                            if isinstance(dt, datetime):
+                                booked_hours.add(dt.strftime("%H:%M"))
+            except Exception:
+                pass
 
-        # ---------- Microsoft Graph events for the whole day ----------
-        # Build start/end ISO strings for the day in Pacific time
-        local_tz = ZoneInfo("America/Los_Angeles")
-        day_start = datetime.combine(current, datetime.min.time()).replace(tzinfo=local_tz)
-        day_end = datetime.combine(current, datetime.max.time()).replace(tzinfo=local_tz)
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
-        if calendar_id:
-            url = (
-                f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/calendarView"
-                f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
-            )
-        else:
-            url = (
-                f"https://graph.microsoft.com/v1.0/users/{user_id}/calendarView"
-                f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
-            )
-        try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            resp.raise_for_status()
-            events = resp.json().get("value", [])
-        except Exception:
-            events = []
+            # ---------- Microsoft Graph events for the whole day ----------
+            # Build start/end ISO strings for the day in Pacific time
+            local_tz = ZoneInfo("America/Los_Angeles")
+            day_start = datetime.combine(current, datetime.min.time()).replace(tzinfo=local_tz)
+            day_end = datetime.combine(current, datetime.max.time()).replace(tzinfo=local_tz)
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+            if calendar_id:
+                url = (
+                    f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/calendarView"
+                    f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
+                )
+            else:
+                url = (
+                    f"https://graph.microsoft.com/v1.0/users/{user_id}/calendarView"
+                    f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
+                )
+            try:
+                resp = requests.get(url, headers=headers, timeout=10)
+                resp.raise_for_status()
+                events = resp.json().get("value", [])
+            except Exception:
+                events = []
 
-        # Determine which hours have a free "Touring Hours" block
-        free_hours = set()
-        for ev in events:
-            subject = ev.get("subject", "")
-            show_as = ev.get("showAs", "").lower()
-            if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in ("free", "tentative"):
-                ev_start = datetime.fromisoformat(ev["start"]["dateTime"]).replace(tzinfo=ZoneInfo(ev["start"].get("timeZone", "UTC")))
-                ev_end = datetime.fromisoformat(ev["end"]["dateTime"]).replace(tzinfo=ZoneInfo(ev["end"].get("timeZone", "UTC")))
-                # iterate each hour within the event window
-                hour_cursor = ev_start
-                while hour_cursor < ev_end:
-                    hour_str = hour_cursor.strftime("%H:%M")
-                    free_hours.add(hour_str)
-                    hour_cursor += timedelta(hours=1)
-        # ---------- Build result slots ----------
-        slots = []
-        for hour in sorted(free_hours):
-            if hour not in booked_hours:
-                dt = datetime.combine(current, datetime.strptime(hour, "%H:%M").time()).replace(tzinfo=local_tz)
-                slots.append(dt.isoformat())
-        if slots:
-            result["dates"][date_iso] = {"slots": slots}
-        current += timedelta(days=1)
-    return (jsonify(result), 200)
+            # Determine which hours have a free "Touring Hours" block
+            free_hours = set()
+            for ev in events:
+                subject = ev.get("subject", "")
+                show_as = ev.get("showAs", "").lower()
+                if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in ("free", "tentative"):
+                    ev_start = datetime.fromisoformat(ev["start"]["dateTime"]).replace(tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC")))
+                    ev_end = datetime.fromisoformat(ev["end"]["dateTime"]).replace(tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC")))
+                    # iterate each hour within the event window
+                    hour_cursor = ev_start
+                    while hour_cursor < ev_end:
+                        hour_str = hour_cursor.strftime("%H:%M")
+                        free_hours.add(hour_str)
+                        hour_cursor += timedelta(hours=1)
+            # ---------- Build result slots ----------
+            slots = []
+            for hour in sorted(free_hours):
+                if hour not in booked_hours:
+                    dt = datetime.combine(current, datetime.strptime(hour, "%H:%M").time()).replace(tzinfo=local_tz)
+                    slots.append(dt.isoformat())
+            if slots:
+                result["dates"][date_iso] = {"slots": slots}
+            current += timedelta(days=1)
+        return (result, 200)
+    except Exception as e:
+        return ({"status": "error", "message": str(e)}, 500)
 @functions_framework.http
 def cancel_tour(request):
     """Customer cancels a tour using stored token."""
     # CORS setup (reuse same as handle_booking)
     origin = request.headers.get('Origin')
-    allowed_origins = [
+    allowed_origins = {
         "https://bodiefoundation.org",
-        "https://www.bodiefoundation.org"
-    ]
+        "https://www.bodiefoundation.org",
+        "https://site.squarespace.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "http://localhost:8000",
+        "http://localhost:8081",
+    }
     cors_origin = "https://www.bodiefoundation.org"
     if origin:
         origin_lower = origin.lower()
-        if (
-            origin_lower in allowed_origins
-            or origin_lower.endswith('.squarespace.com')
-            or "localhost" in origin_lower
-            or "127.0.0.1" in origin_lower
-        ):
+        if origin_lower in allowed_origins:
             cors_origin = origin
     if request.method == 'OPTIONS':
         headers = {
@@ -1183,13 +1357,17 @@ def cancel_tour(request):
         data = booking_doc.to_dict()
         if data.get('token') != token:
             return ({"status": "error", "message": "Invalid token"}, 403, headers)
-        # Release the slot
         tour_dt = data.get('tour_datetime')
         if tour_dt:
-            date_str = tour_dt.strftime('%Y-%m-%d')
+            if isinstance(tour_dt, str):
+                tour_dt = datetime.fromisoformat(tour_dt)
+            if tour_dt.tzinfo is None:
+                tour_dt = tour_dt.replace(tzinfo=timezone.utc)
+            tour_dt_local = tour_dt.astimezone(ZoneInfo("America/Los_Angeles"))
+            date_str = tour_dt_local.strftime('%Y-%m-%d')
             inventory_ref = db.collection('public').document(date_str)
             try:
-                inventory_ref.update({"slots": firestore.ArrayRemove([tour_dt])})
+                inventory_ref.update({"taken_slots": firestore.ArrayRemove([tour_dt])})
             except Exception:
                 pass
         # Update payment_status instead of deleting the booking
