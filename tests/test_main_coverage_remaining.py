@@ -793,3 +793,55 @@ def test_cancel_tour_invalid_token_branch(mock_main_db):
     body, status, headers = main.cancel_tour(request)
     assert status == 403
     assert "Invalid token" in body["message"]
+
+
+# ===========================================================================
+# 13. Naive Timestamps Cached Tokens & Missing Public Document
+# ===========================================================================
+
+
+@patch("main.db")
+def test_get_m365_access_token_naive_cached(mock_db):
+    mock_doc = MagicMock()
+    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        hours=1
+    )
+    mock_doc.get.return_value.to_dict.return_value = {
+        "user_id": "ranger_1",
+        "access_token": "valid_cached",
+        "expires_at": naive_expires,
+    }
+    mock_db.collection.return_value.document.return_value = mock_doc
+    token, user_id = main.get_m365_access_token()
+    assert token == "valid_cached"
+    assert user_id == "ranger_1"
+
+
+@patch("main.db")
+def test_get_qbo_access_token_naive_cached(mock_db):
+    mock_doc = MagicMock()
+    naive_expires = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(
+        hours=1
+    )
+    mock_doc.get.return_value.to_dict.return_value = {
+        "access_token": "qbo_cached",
+        "expires_at": naive_expires,
+        "realmId": "realm_123",
+    }
+    mock_db.collection.return_value.document.return_value = mock_doc
+    token, realm_id = main.get_qbo_access_token()
+    assert token == "qbo_cached"
+    assert realm_id == "realm_123"
+
+
+def test_process_booking_transaction_document_not_exists():
+    transaction = MagicMock()
+    inventory_ref = MagicMock()
+    mock_snapshot = MagicMock()
+    mock_snapshot.exists = False
+    inventory_ref.get.return_value = mock_snapshot
+
+    booking_id = main.process_booking_transaction(
+        transaction, inventory_ref, "2026-06-15", "10:00", 5, {"name": "Alice"}
+    )
+    assert booking_id is not None
