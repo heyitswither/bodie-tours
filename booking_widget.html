@@ -551,7 +551,7 @@
     .bb-tour-cards-container {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      max-height: 580px; /* Expanded max-height to let grid rows render cleanly without unnecessary scrolling */
+      max-height: none; /* Expanded height fully so all grid rows render in place without inner scrolling */
       gap: 20px;
       padding-right: 8px;
     }
@@ -597,8 +597,8 @@
     flex-direction: column;
     gap: 16px;
     margin-bottom: 28px;
-    max-height: 480px;
-    overflow-y: auto;
+    max-height: none; /* Expanded height fully so all tour cards are displayed inline without inner scrollbars */
+    overflow-y: visible;
     padding-right: 6px;
   }
 
