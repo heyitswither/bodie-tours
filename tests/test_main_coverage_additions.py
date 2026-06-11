@@ -636,6 +636,7 @@ def test_tc_m21_handle_booking_cors_origins():
         "https://bodiefoundation.org",
         "https://www.bodiefoundation.org",
         "https://site.squarespace.com",
+        "https://guppy-sapphire-xsfm.squarespace.com",
         "http://localhost:3000",
         "http://127.0.0.1:8080",
     ]

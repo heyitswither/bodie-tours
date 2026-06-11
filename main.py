@@ -1,6 +1,7 @@
 import functions_framework
 from google.cloud import firestore
 import requests
+import requests_retry
 import os
 import base64
 import secrets
@@ -99,7 +100,7 @@ MAX_GROUP_SIZE = 20
 # ---------------------------------------------------------------------------
 
 
-def get_m365_access_token():
+def get_m365_access_token(force=False):
     if db.__class__.__name__ == "DummyFirestore":
         return "mock_m365_token", "mock_m365_user_id"
     auth_doc_ref = db.collection("config").document("m365_auth")
@@ -114,7 +115,7 @@ def get_m365_access_token():
     access_token = auth_data.get("access_token")
     expires_at = auth_data.get("expires_at")
 
-    if access_token and expires_at:
+    if not force and access_token and expires_at:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
@@ -183,6 +184,37 @@ def _get_zoneinfo(tz_name):
         return timezone.utc
 
 
+def _safe_fromisoformat(iso_str):
+    """
+    Safely parse an ISO format string. Trims fractional seconds to 6 digits
+    to avoid ValueError in standard datetime.fromisoformat for strings with 7+ digits.
+    """
+    if not iso_str:
+        raise ValueError("Empty isoformat string")
+    if isinstance(iso_str, datetime):
+        return iso_str
+    if not isinstance(iso_str, str):
+        iso_str = str(iso_str)
+    if "." in iso_str:
+        parts = iso_str.split(".")
+        main_part = parts[0]
+        frac_tz_part = parts[1]
+        
+        idx = 0
+        while idx < len(frac_tz_part) and frac_tz_part[idx].isdigit():
+            idx += 1
+            
+        frac_part = frac_tz_part[:idx]
+        tz_part = frac_tz_part[idx:]
+        
+        if len(frac_part) > 6:
+            frac_part = frac_part[:6]
+            
+        iso_str = f"{main_part}.{frac_part}{tz_part}"
+        
+    return datetime.fromisoformat(iso_str)
+
+
 def check_m365_availability(
     access_token, user_id, date_str, time_str, calendar_id=None
 ):
@@ -232,10 +264,10 @@ def check_m365_availability(
             "free",
             "tentative",
         ):
-            ev_start = datetime.fromisoformat(event["start"]["dateTime"]).replace(
+            ev_start = _safe_fromisoformat(event["start"]["dateTime"]).replace(
                 tzinfo=_get_zoneinfo(event["start"].get("timeZone"))
             )
-            ev_end = datetime.fromisoformat(event["end"]["dateTime"]).replace(
+            ev_end = _safe_fromisoformat(event["end"]["dateTime"]).replace(
                 tzinfo=_get_zoneinfo(event["end"].get("timeZone"))
             )
             if ev_start <= start_dt and ev_end >= end_dt:
@@ -325,7 +357,7 @@ def send_booking_receipt_email(booking_id, data):
 
     tour_datetime = data.get("tour_datetime")
     if isinstance(tour_datetime, str):
-        tour_datetime = datetime.fromisoformat(tour_datetime)
+        tour_datetime = _safe_fromisoformat(tour_datetime)
     if tour_datetime is None:
         logging.warning(
             "No tour_datetime found for booking %s, skipping receipt email", booking_id
@@ -420,8 +452,6 @@ def send_booking_receipt_email(booking_id, data):
         ("customer_name", str(customer_name)),
         ("booking_id", str(booking_id)),
         ("tour_datetime_str", str(tour_datetime_str)),
-        ("payment_link", data.get("payment_link") or ""),
-        ("invoice_link", data.get("payment_link") or ""),
         ("party_size", str(data.get("party_size", 1))),
         ("total_amount", total_amount),
         ("cancellation_link", cancellation_link),
@@ -433,8 +463,6 @@ def send_booking_receipt_email(booking_id, data):
         ("customer_name", html.escape(str(customer_name))),
         ("booking_id", html.escape(str(booking_id))),
         ("tour_datetime_str", html.escape(str(tour_datetime_str))),
-        ("payment_link", html.escape(str(data.get("payment_link") or ""))),
-        ("invoice_link", html.escape(str(data.get("payment_link") or ""))),
         ("party_size", html.escape(str(data.get("party_size", 1)))),
         ("total_amount", html.escape(str(total_amount))),
         ("cancellation_link", html.escape(str(cancellation_link))),
@@ -558,7 +586,7 @@ def _resolve_qbo_credentials(auth_data):
     return client_id, client_secret, verifier_token, redirect_uri
 
 
-def get_qbo_access_token():
+def get_qbo_access_token(force=False):
     """Retrieve a valid QBO access token, refreshing if expired."""
     if db.__class__.__name__ == "DummyFirestore":
         return "mock_qbo_token", "mock_realm_id"
@@ -572,7 +600,7 @@ def get_qbo_access_token():
     realm_id = auth_data.get("realmId")
 
     # Return cached token if still valid
-    if access_token and expires_at:
+    if not force and access_token and expires_at:
         if expires_at.tzinfo is None:
             expires_at = expires_at.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) < expires_at - timedelta(seconds=60):
@@ -622,8 +650,18 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
     )
     # Append the realm (company) ID to the URL path
     base_url = f"{base_url}/{realm_id}"
-    # Environment variable determines which payment portal to use (default sandbox)
-    environment = os.getenv("QBO_ENVIRONMENT", os.getenv("ENVIRONMENT", "sandbox"))
+    # Determine which payment portal to use from Firestore first, falling back to environment variable
+    environment = None
+    if db is not None and getattr(db, "__class__", None) and db.__class__.__name__ not in ("DummyFirestore", "_DummyClient", "MagicMock", "Mock"):
+        try:
+            auth_doc = db.collection("config").document("qbo_auth").get()
+            if auth_doc.exists:
+                environment = auth_doc.to_dict().get("environment")
+        except Exception:
+            pass
+    if not environment:
+        environment = os.getenv("QBO_ENVIRONMENT", os.getenv("ENVIRONMENT", "sandbox"))
+    environment = environment.lower().strip()
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -661,6 +699,20 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data):
     response_data = response.json()
     invoice = response_data.get("Invoice", {})
     invoice_id = invoice.get("Id")
+
+    # Automatically send/email the invoice via QuickBooks Online
+    try:
+        send_url = f"{base_url}/invoice/{invoice_id}/send?minorversion=65"
+        send_response = requests.post(
+            send_url,
+            headers=headers,
+            timeout=10,
+        )
+        if send_response.status_code not in (200, 201):
+            logging.error(f"Failed to send QBO invoice email: {send_response.text[:200]}")
+    except Exception as send_err:
+        logging.exception("Error calling QBO invoice send API: %s", send_err)
+
     if environment == "production":
         payment_link = f"https://app.qbo.intuit.com/app/invoice?txnId={invoice_id}"
     else:
@@ -716,7 +768,7 @@ def process_booking_transaction(
     for ts in taken_slots_raw:
         try:
             if isinstance(ts, str):
-                parsed = datetime.fromisoformat(ts)
+                parsed = _safe_fromisoformat(ts)
             else:
                 parsed = ts
             if parsed.tzinfo is None:
@@ -790,6 +842,7 @@ def handle_booking(request):
         "https://bodiefoundation.org",
         "https://www.bodiefoundation.org",
         "https://site.squarespace.com",
+        "https://guppy-sapphire-xsfm.squarespace.com",
         "http://localhost:3000",
         "http://127.0.0.1:8080",
         "http://localhost:8000",
@@ -967,6 +1020,9 @@ def handle_booking(request):
                 .to_dict()
                 .get("token")
             )
+
+            # Booking hold email reminder via Outlook is disabled per user request. Guests will receive the official QBO invoice email.
+
             return (
                 {
                     "status": "success",
@@ -1036,7 +1092,7 @@ def handle_booking(request):
                             for ts in taken:
                                 try:
                                     if isinstance(ts, str):
-                                        parsed = datetime.fromisoformat(ts)
+                                        parsed = _safe_fromisoformat(ts)
                                     else:
                                         parsed = ts
                                     parsed_local = (
@@ -1497,13 +1553,44 @@ def qbo_webhook(request):
 @functions_framework.http
 def m365_free_availability(request):
     """Return available tour slots for each day as timestamps.
-    Uses a single Microsoft Graph call per day to fetch all calendar events and
-    compares them with already booked slots stored in Firestore. This reduces the
-    number of Graph API requests dramatically compared to checking each hour
-    individually.
+    Uses a single Microsoft Graph call covering the entire start/end range to fetch all
+    calendar events and compares them with already booked slots stored in Firestore.
+    This reduces the number of Graph API requests dramatically.
     """
+    # --- CORS Configuration ---
+    origin = request.headers.get("Origin")
+    allowed_origins = {
+        "https://bodiefoundation.org",
+        "https://www.bodiefoundation.org",
+        "https://site.squarespace.com",
+        "https://guppy-sapphire-xsfm.squarespace.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "http://localhost:8000",
+        "http://localhost:8081",
+    }
+    cors_origin = "https://www.bodiefoundation.org"  # default secure origin
+
+    if origin:
+        origin_lower = origin.lower()
+        if origin_lower in allowed_origins:
+            cors_origin = origin
+
+    if request.method == "OPTIONS":
+        headers = {
+            "Access-Control-Allow-Origin": cors_origin,
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "3600",
+        }
+        return ("", 204, headers)
+
+    headers = {
+        "Access-Control-Allow-Origin": cors_origin,
+    }
+
     if request.method != "GET":
-        return ("Method Not Allowed", 405)
+        return ("Method Not Allowed", 405, headers)
 
     try:
         token, user_id = get_m365_access_token()
@@ -1530,7 +1617,69 @@ def m365_free_availability(request):
             else today + timedelta(days=30)
         )
 
-        # Typical tour hours (9:00‑16:00)
+        local_tz = ZoneInfo("America/Los_Angeles")
+        # Build start/end ISO strings for the entire start/end date range in Pacific time
+        range_start = datetime.combine(start_date, datetime.min.time()).replace(
+            tzinfo=local_tz
+        )
+        range_end = datetime.combine(end_date, datetime.max.time()).replace(
+            tzinfo=local_tz
+        )
+        start_iso = range_start.isoformat()
+        end_iso = range_end.isoformat()
+
+        graph_headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        if calendar_id:
+            url = (
+                f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/calendarView"
+                f"?startDateTime={start_iso}&endDateTime={end_iso}&$select=subject,showAs,start,end"
+            )
+        else:
+            url = (
+                f"https://graph.microsoft.com/v1.0/users/{user_id}/calendarView"
+                f"?startDateTime={start_iso}&endDateTime={end_iso}&$select=subject,showAs,start,end"
+            )
+
+        try:
+            resp = requests.get(url, headers=graph_headers, timeout=10)
+            resp.raise_for_status()
+            events = resp.json().get("value", [])
+        except Exception:
+            events = []
+
+        # Parse the resulting events list once and group/index them in-memory by date (using America/Los_Angeles local date strings)
+        free_hours_by_date = {}
+        for ev in events:
+            subject = ev.get("subject", "")
+            show_as = ev.get("showAs", "").lower()
+            if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in (
+                "free",
+                "tentative",
+            ):
+                try:
+                    ev_start = _safe_fromisoformat(ev["start"]["dateTime"]).replace(
+                        tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC"))
+                    )
+                    ev_end = _safe_fromisoformat(ev["end"]["dateTime"]).replace(
+                        tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC"))
+                    )
+
+                    ev_start_local = ev_start.astimezone(local_tz)
+                    ev_end_local = ev_end.astimezone(local_tz)
+
+                    hour_cursor = ev_start_local
+                    while hour_cursor < ev_end_local:
+                        date_str = hour_cursor.strftime("%Y-%m-%d")
+                        hour_str = hour_cursor.strftime("%H:%M")
+                        if date_str not in free_hours_by_date:
+                            free_hours_by_date[date_str] = set()
+                        free_hours_by_date[date_str].add(hour_str)
+                        hour_cursor += timedelta(hours=1)
+                except Exception:
+                    pass
 
         result = {"dates": {}}
         current = start_date
@@ -1559,61 +1708,16 @@ def m365_free_availability(request):
                             else:
                                 dt = ts
                             if isinstance(dt, datetime):
-                                booked_hours.add(dt.strftime("%H:%M"))
+                                if dt.tzinfo is None:
+                                    dt = dt.replace(tzinfo=timezone.utc)
+                                dt_local = dt.astimezone(local_tz)
+                                booked_hours.add(dt_local.strftime("%H:%M"))
             except Exception:
                 pass
 
-            # ---------- Microsoft Graph events for the whole day ----------
-            # Build start/end ISO strings for the day in Pacific time
-            local_tz = ZoneInfo("America/Los_Angeles")
-            day_start = datetime.combine(current, datetime.min.time()).replace(
-                tzinfo=local_tz
-            )
-            day_end = datetime.combine(current, datetime.max.time()).replace(
-                tzinfo=local_tz
-            )
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            }
-            if calendar_id:
-                url = (
-                    f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/calendarView"
-                    f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
-                )
-            else:
-                url = (
-                    f"https://graph.microsoft.com/v1.0/users/{user_id}/calendarView"
-                    f"?startDateTime={day_start.isoformat()}&endDateTime={day_end.isoformat()}&$select=subject,showAs,start,end"
-                )
-            try:
-                resp = requests.get(url, headers=headers, timeout=10)
-                resp.raise_for_status()
-                events = resp.json().get("value", [])
-            except Exception:
-                events = []
+            # Determine free hours for this day from in-memory cache
+            free_hours = free_hours_by_date.get(date_iso, set())
 
-            # Determine which hours have a free "Touring Hours" block
-            free_hours = set()
-            for ev in events:
-                subject = ev.get("subject", "")
-                show_as = ev.get("showAs", "").lower()
-                if subject.startswith(TOURING_HOURS_SUBJECT_PREFIX) and show_as in (
-                    "free",
-                    "tentative",
-                ):
-                    ev_start = datetime.fromisoformat(ev["start"]["dateTime"]).replace(
-                        tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC"))
-                    )
-                    ev_end = datetime.fromisoformat(ev["end"]["dateTime"]).replace(
-                        tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC"))
-                    )
-                    # iterate each hour within the event window
-                    hour_cursor = ev_start
-                    while hour_cursor < ev_end:
-                        hour_str = hour_cursor.strftime("%H:%M")
-                        free_hours.add(hour_str)
-                        hour_cursor += timedelta(hours=1)
             # ---------- Build result slots ----------
             slots = []
             for hour in sorted(free_hours):
@@ -1625,9 +1729,9 @@ def m365_free_availability(request):
             if slots:
                 result["dates"][date_iso] = {"slots": slots}
             current += timedelta(days=1)
-        return (result, 200)
+        return (result, 200, headers)
     except Exception as e:
-        return ({"status": "error", "message": str(e)}, 500)
+        return ({"status": "error", "message": str(e)}, 500, headers)
 
 
 @functions_framework.http
@@ -1639,6 +1743,7 @@ def cancel_tour(request):
         "https://bodiefoundation.org",
         "https://www.bodiefoundation.org",
         "https://site.squarespace.com",
+        "https://guppy-sapphire-xsfm.squarespace.com",
         "http://localhost:3000",
         "http://127.0.0.1:8080",
         "http://localhost:8000",
@@ -1678,7 +1783,7 @@ def cancel_tour(request):
         tour_dt = data.get("tour_datetime")
         if tour_dt:
             if isinstance(tour_dt, str):
-                tour_dt = datetime.fromisoformat(tour_dt)
+                tour_dt = _safe_fromisoformat(tour_dt)
             if tour_dt.tzinfo is None:
                 tour_dt = tour_dt.replace(tzinfo=timezone.utc)
             tour_dt_local = tour_dt.astimezone(ZoneInfo("America/Los_Angeles"))
@@ -1696,3 +1801,18 @@ def cancel_tour(request):
 
         traceback.print_exc()
         return ({"status": "error", "message": str(e)}, 500, headers)
+
+
+@functions_framework.http
+def prune_unpaid_slots(request):
+    """Delegate to avoid global-scope circular imports."""
+    from prune_unpaid_slots import prune_unpaid_slots as _prune
+    return _prune(request)
+
+
+@functions_framework.http
+def retry_unpaid_bookings(request):
+    """Delegate to avoid global-scope circular imports."""
+    from retry_unpaid_bookings import retry_unpaid_bookings as _retry
+    return _retry(request)
+

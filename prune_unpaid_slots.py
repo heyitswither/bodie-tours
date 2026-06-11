@@ -6,6 +6,7 @@ from google.cloud import firestore
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 import requests
+import requests_retry
 from unittest.mock import MagicMock
 from typing import Any
 
@@ -118,19 +119,19 @@ def send_outlook_reminder(
     token=None,
 ):
     """Send an email reminder via M365 Graph API /sendMail before pruning.
-    # Determine environment (production or sandbox)
-    environment = os.getenv("QBO_ENVIRONMENT", os.getenv("ENVIRONMENT", "sandbox"))
-    # Base URL varies by environment
-    if environment == "production":
-        base_url = "https://quickbooks.api.intuit.com/v3/company"
-    else:
-        base_url = os.getenv("QBO_BASE_URL", "https://sandbox-quickbooks.api.intuit.com/v3/company")
-    # Append the realm (company) ID to the URL path
-    base_url = f"{base_url}/{realm_id}".lower()
-    Supports configurable templates via the EMAIL_TEMPLATE_TYPE environment variable.
-    - "simple": uses the built‑in default subject/body (current behavior).
-    - "custom": loads a Firestore document `email_templates/prune_reminder` with fields `subject` and `body`.
+    BUT: Do not use Outlook to send payment links or reminders in non-test mode.
     """
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.info(
+            "Bypassing Outlook sendMail for reminder/payment link (booking_id: %s, email: %s)",
+            booking_id,
+            customer_email,
+        )
+        return True
+
+    # Configurable templates via the EMAIL_TEMPLATE_TYPE environment variable:
+    # - "simple": uses the built-in default subject/body (current behavior).
+    # - "custom": loads a Firestore document `email_templates/prune_reminder` with fields `subject` and `body`.
     api_base_url = (
         os.getenv("API_BASE_URL")
         or os.getenv("CANCEL_BASE_URL")

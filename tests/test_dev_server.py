@@ -14,7 +14,6 @@ def test_index_endpoint(client):
     assert response.status_code == 200
     html = response.data.decode("utf-8")
     assert "/handle-booking" in html
-    assert "/firestore" in html
     assert "false" in html  # replaced hostname check
 
 

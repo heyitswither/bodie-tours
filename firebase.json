@@ -1,8 +1,1 @@
-{
-  "firestore": {
-    "database": "bodie-tours",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json",
-    "location": "us-west2"
-  }
-}
+firestore.rules

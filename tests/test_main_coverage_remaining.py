@@ -44,7 +44,7 @@ def test_m365_free_availability_branches(mock_get, mock_token, mock_main_db):
     # 1. Non-GET request -> 405
     builder = EnvironBuilder(method="POST")
     request = Request(builder.get_environ())
-    body, status = main.m365_free_availability(request)
+    body, status, headers = main.m365_free_availability(request)
     assert status == 405
 
     # 2. GET request success with calendar events
@@ -92,7 +92,7 @@ def test_m365_free_availability_branches(mock_get, mock_token, mock_main_db):
     mock_client_db.collection = mock_main_db.collection
 
     with patch("main.db", mock_client_db):
-        resp, status = main.m365_free_availability(request)
+        resp, status, headers = main.m365_free_availability(request)
         assert status == 200
         # Parse from Flask response or direct dict if returned as dict
         if isinstance(resp, dict):
@@ -103,7 +103,7 @@ def test_m365_free_availability_branches(mock_get, mock_token, mock_main_db):
 
     # 3. Exception in main.m365_free_availability -> 500
     mock_token.side_effect = Exception("Auth Down")
-    resp, status = main.m365_free_availability(request)
+    resp, status, headers = main.m365_free_availability(request)
     assert status == 500
 
 
@@ -560,7 +560,7 @@ def test_m365_free_availability_exception_branches(mock_get, mock_token, mock_ma
         mock_doc
     )
 
-    resp, status = main.m365_free_availability(request)
+    resp, status, headers = main.m365_free_availability(request)
     assert (
         status == 200
     )  # Returns empty results since it catches and falls back to empty events
@@ -761,7 +761,7 @@ def test_m365_free_availability_legacy_slots_and_timestamps(
     mock_client_db.collection = mock_main_db.collection
 
     with patch("main.db", mock_client_db):
-        resp, status = main.m365_free_availability(request)
+        resp, status, headers = main.m365_free_availability(request)
         assert status == 200
 
     # 2. Test Firestore Timestamp objects converting to_datetime() (line 1238)
@@ -769,7 +769,7 @@ def test_m365_free_availability_legacy_slots_and_timestamps(
     mock_ts.to_datetime.return_value = datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
     mock_doc.to_dict.return_value = {"slots": [mock_ts]}  # list of timestamps
     with patch("main.db", mock_client_db):
-        resp, status = main.m365_free_availability(request)
+        resp, status, headers = main.m365_free_availability(request)
         assert status == 200
 
 

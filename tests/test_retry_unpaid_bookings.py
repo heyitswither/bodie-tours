@@ -124,3 +124,33 @@ def test_skip_due_to_max_retries(monkeypatch):
     assert result["retries"] == 0
     assert result["emails_sent"] == 0
     assert ref.updates == []
+
+
+def test_skip_due_to_existing_invoice_id(monkeypatch):
+    data = {
+        "retry_attempts": 1,
+        "guest": {"email": "guest@example.com", "name": "Guest"},
+        "date": "2026-07-01",
+        "time": "10:00",
+        "party_size": 2,
+        "integration_ids": {"qbo_invoice_id": "existing_invoice_123"},
+    }
+    ref = MockReference()
+    doc = MockDoc(data, ref)
+    mock_collection = make_mock_firestore([doc])
+    monkeypatch.setattr(
+        firestore,
+        "Client",
+        lambda **kwargs: mock.MagicMock(collection=lambda name: mock_collection),
+    )
+    # Ensure no external calls are invoked; they should raise RuntimeError if called
+    monkeypatch.setattr(
+        "retry_unpaid_bookings.get_qbo_access_token",
+        lambda: (_ for _ in ()).throw(RuntimeError("Should not be called")),
+    )
+    result, status = retry_unpaid_bookings(None)
+    assert status == 200
+    assert result["processed"] == 0
+    assert result["retries"] == 0
+    assert result["emails_sent"] == 0
+    assert ref.updates == []

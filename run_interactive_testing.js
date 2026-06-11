@@ -93,7 +93,7 @@ const path = require('path');
     await page.type('#guest-party', '4');
 
     // Submit
-    await page.click('button[onclick="bbSubmitBooking()"]');
+    await page.click('#bb-confirm-booking-btn');
     await page.waitForSelector('#step-pane-4.active', { timeout: 10000 });
 
     // Screenshot
@@ -171,7 +171,7 @@ const path = require('path');
     await page.type('#guest-party', '25');
 
     // Submit to trigger validation
-    await page.click('button[onclick="bbSubmitBooking()"]');
+    await page.click('#bb-confirm-booking-btn');
     await page.waitForSelector('#bb-error-box', { visible: true });
 
     // Screenshot
@@ -209,7 +209,7 @@ const path = require('path');
     await page.type('#guest-party', '2');
 
     // Submit
-    await page.click('button[onclick="bbSubmitBooking()"]');
+    await page.click('#bb-confirm-booking-btn');
     await page.waitForSelector('#bb-error-box', { visible: true });
 
     // Screenshot

@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from google.cloud import firestore
 import requests
+import requests_retry
 
 # Re‑use helpers from existing modules
 from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
@@ -93,6 +94,11 @@ def retry_unpaid_bookings(request):
             if retry_attempts >= 3:
                 continue
 
+            # Skip bookings that already have a successful QBO invoice ID (they are just waiting for payment)
+            integration_ids = data.get("integration_ids") or {}
+            if integration_ids.get("qbo_invoice_id"):
+                continue
+
             guest = data.get("guest") or {}
             email = guest.get("email")
             name = guest.get("name", "Guest")
@@ -135,7 +141,7 @@ def retry_unpaid_bookings(request):
                 continue
 
             # Send immediate acknowledgment email via M365
-            if data.get("email_sent_count", 0) < 2:
+            if data.get("email_sent_count", 0) < 1:
                 try:
                     m365_token, m365_user_id = get_m365_access_token()
                     sent = _send_temp_issue_email(

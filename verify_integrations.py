@@ -275,6 +275,7 @@ def test_m365(db):
             refresh_token = m365_data.get("refresh_token")
 
         user_id = m365_data.get("user_id")
+        calendar_id = m365_data.get("calendar_id")
         expires_at = m365_data.get("expires_at")
 
         # Check expiration. If expired or close to expiration (expires in less than 5 minutes), refresh
@@ -372,7 +373,10 @@ def test_m365(db):
                 "timeZone": "UTC",
             },
         }
-        post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events"
+        if calendar_id:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events"
+        else:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events"
         res = requests.post(post_url, headers=headers, json=event_payload, timeout=10)
         res.raise_for_status()
         event_data = res.json()
@@ -381,9 +385,10 @@ def test_m365(db):
 
         # 3. Clean up the injected event
         print_info(f"Deleting the injected M365 event: {event_id}...")
-        delete_url = (
-            f"https://graph.microsoft.com/v1.0/users/{user_id}/events/{event_id}"
-        )
+        if calendar_id:
+            delete_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events/{event_id}"
+        else:
+            delete_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/events/{event_id}"
         res = requests.delete(delete_url, headers=headers, timeout=10)
         res.raise_for_status()
         print_info("M365 temporary event deleted successfully.")
@@ -397,6 +402,27 @@ def test_m365(db):
         return False
 
 
+def get_csrf_session(url):
+    """
+    Performs a GET request to the handle-booking URL to retrieve a CSRF token and cookie,
+    and returns a requests.Session pre-configured with X-CSRF-Token and cookies.
+    """
+    session = requests.Session()
+    print_info(f"Fetching CSRF token from {url}...")
+    res = session.get(url, timeout=10)
+    res.raise_for_status()
+    data = res.json()
+    csrf_token = data.get("csrf_token")
+    if not csrf_token:
+        raise Exception("Failed to retrieve CSRF token from GET response.")
+    session.headers.update({
+        "X-CSRF-Token": csrf_token,
+        "Origin": "https://www.bodiefoundation.org",
+    })
+    print_info(f"Successfully obtained CSRF token and configured session.")
+    return session
+
+
 def test_booking_function():
     print_info("Running Live Function - Booking Test...")
     url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking"
@@ -405,7 +431,7 @@ def test_booking_function():
         headers = {
             "Origin": "https://www.bodiefoundation.org",
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "Content-Type",
+            "Access-Control-Request-Headers": "Content-Type, X-CSRF-Token",
         }
         print_info(f"Sending OPTIONS to {url}...")
         res = requests.options(url, headers=headers, timeout=10)
@@ -423,6 +449,9 @@ def test_booking_function():
 
         print_info("CORS OPTIONS headers validated.")
 
+        # Get CSRF session
+        session = get_csrf_session(url)
+
         # 2. Send POST with invalid placeholder data (invalid date format)
         payload = {
             "date": "invalid-date",
@@ -435,7 +464,7 @@ def test_booking_function():
             },
         }
         print_info(f"Sending POST with invalid date format to {url}...")
-        res = requests.post(url, json=payload, timeout=10)
+        res = session.post(url, json=payload, timeout=10)
         if res.status_code != 409:
             raise Exception(
                 f"POST invalid date format status code is {res.status_code}, expected 409."
@@ -514,36 +543,602 @@ def test_pruning_function():
         return False
 
 
+def _get_oidc_token(url):
+    """
+    Generate Google OIDC token programmatically for service-to-service Cloud Function authorization.
+    """
+    credentials, project = google.auth.default()
+    req = google.auth.transport.requests.Request()
+    credentials.refresh(req)
+
+    oidc_token = getattr(credentials, "id_token", None)
+    if not oidc_token:
+        try:
+            # Most reliable method for local developer credentials
+            oidc_token = (
+                subprocess.check_output(["gcloud", "auth", "print-identity-token"])
+                .decode()
+                .strip()
+            )
+        except Exception:
+            from google.oauth2 import id_token as google_id_token
+            oidc_token = google_id_token.fetch_id_token(req, url)
+    if not oidc_token:
+        raise Exception("Failed to generate Google OIDC ID token.")
+    return oidc_token
+
+
+def find_live_available_slot():
+    """
+    Query m365-free-availability to find any live slot that is free.
+    """
+    url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-free-availability"
+    try:
+        print_info("Finding live available slot from m365-free-availability...")
+        res = requests.get(url, timeout=15)
+        if res.ok:
+            data = res.json()
+            dates = data.get("dates", {})
+            for date_str, details in dates.items():
+                slots = details.get("slots", [])
+                for slot in slots:
+                    dt = datetime.fromisoformat(slot)
+                    time_str = dt.strftime("%H:%M")
+                    print_info(f"Found live available slot: {date_str} at {time_str}")
+                    return date_str, time_str
+    except Exception as e:
+        print_warn(f"Failed to find live available slot from m365-free-availability: {e}")
+    return None, None
+
+
+def test_retry_unpaid_function():
+    print_info("Running Live Function - Retry Unpaid Bookings Test (Auth/CORS)...")
+    url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/retry-unpaid-bookings"
+    try:
+        oidc_token = _get_oidc_token(url)
+        headers = {"Authorization": f"Bearer {oidc_token}"}
+        print_info(f"Sending POST to retry function {url}...")
+        res = requests.post(url, headers=headers, timeout=20)
+
+        if res.status_code == 200:
+            print_pass(
+                f"Live Function - Retry Unpaid Bookings Test succeeded (200 OK): {res.text}"
+            )
+            return True
+        elif res.status_code in (503, 401, 403):
+            print_warn(
+                f"Retry Unpaid Bookings Test: function returned status {res.status_code}. Response: {res.text}"
+            )
+            return False
+        else:
+            print_fail(
+                f"Retry Unpaid Bookings Test: unexpected status code {res.status_code}. Response: {res.text}"
+            )
+            return False
+    except Exception as e:
+        print_fail(f"Live Function - Retry Unpaid Bookings Test failed: {e}")
+        return False
+
+
+def test_m365_availability_and_filtering(db):
+    print_info("Running M365 Availability and Filtering Integration Test...")
+    event_id = None
+    event_deleted = False
+    date_str = "2029-12-02"
+    time_str = "10:00"
+    expected_slot = "2029-12-02T10:00:00-08:00"
+    
+    try:
+        # 1. Fetch M365 auth config
+        doc_ref = db.collection("config").document("m365_auth")
+        doc = doc_ref.get()
+        if not doc.exists:
+            print_warn("M365 config/m365_auth document does not exist. Skipping availability filtering test.")
+            return True
+
+        m365_data = doc.to_dict() or {}
+        access_token = m365_data.get("access_token")
+        refresh_token = m365_data.get("refresh_token")
+        user_id = m365_data.get("user_id")
+        calendar_id = m365_data.get("calendar_id")
+
+        if not access_token or not refresh_token or not user_id:
+            print_warn("M365 tokens/user_id missing. Skipping availability filtering test.")
+            return True
+
+        # Check expiration and refresh if needed
+        expires_at = m365_data.get("expires_at")
+        now_utc = datetime.now(timezone.utc)
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        else:
+            expires_at = now_utc - timedelta(hours=1)
+
+        if now_utc >= expires_at - timedelta(minutes=5):
+            print_info("M365 token expired. Refreshing for availability filtering test...")
+            client_id = m365_data.get("client_id") or os.environ.get("M365_CLIENT_ID")
+            client_secret = m365_data.get("client_secret") or os.environ.get("M365_CLIENT_SECRET")
+            tenant_id = m365_data.get("tenant_id") or os.environ.get("M365_TENANT_ID", "common")
+
+            if not all([client_id, client_secret]):
+                print_warn("Missing M365 credentials. Skipping availability filtering test.")
+                return True
+
+            token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+            payload = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+            res = requests.post(token_url, data=payload, timeout=10)
+            res.raise_for_status()
+            token_response = res.json()
+            access_token = token_response.get("access_token")
+            new_refresh_token = token_response.get("refresh_token")
+            expires_in = token_response.get("expires_in", 3600)
+            new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+
+            update_data = {
+                "access_token": access_token,
+                "expires_at": new_expires_at,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            if new_refresh_token:
+                update_data["refresh_token"] = new_refresh_token
+            doc_ref.update(update_data)
+
+        # 2. Inject temporary 'Touring Hours' event in M365 on far-future date: 2029-12-02
+        event_payload = {
+            "subject": "Touring Hours - Integration Test",
+            "showAs": "free",
+            "body": {
+                "contentType": "HTML",
+                "content": "Temporary Touring Hours for Integration Test",
+            },
+            "start": {
+                "dateTime": "2029-12-02T10:00:00",
+                "timeZone": "Pacific Standard Time",
+            },
+            "end": {
+                "dateTime": "2029-12-02T11:00:00",
+                "timeZone": "Pacific Standard Time",
+            },
+        }
+        if calendar_id:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events"
+        else:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        print_info("Injecting temporary Touring Hours event on 2029-12-02...")
+        res = requests.post(post_url, headers=headers, json=event_payload, timeout=15)
+        res.raise_for_status()
+        event_id = res.json().get("id")
+        print_pass(f"Touring Hours event injected: {event_id}")
+
+        # 3. Query m365-free-availability and assert the slot is available
+        avail_url = f"https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-free-availability?start={date_str}&end={date_str}"
+        print_info(f"Querying live m365-free-availability for {date_str}...")
+        res_avail = requests.get(avail_url, timeout=15)
+        res_avail.raise_for_status()
+        avail_data = res_avail.json()
+        
+        slots = avail_data.get("dates", {}).get(date_str, {}).get("slots", [])
+        if expected_slot not in slots:
+            raise Exception(f"Expected slot {expected_slot} not found in available slots: {slots}")
+        print_pass(f"Slot {expected_slot} successfully returned as available.")
+
+        # 4. Write fake taken slot in public/2029-12-02
+        inventory_ref = db.collection("public").document(date_str)
+        from zoneinfo import ZoneInfo
+        local_tz = ZoneInfo("America/Los_Angeles")
+        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        
+        print_info(f"Setting fake taken slot in public/{date_str}...")
+        inventory_ref.set({
+            "taken_slots": [dt_local],
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+        # 5. Query m365-free-availability again and assert the slot is filtered out
+        print_info("Re-querying live m365-free-availability after marking slot as taken...")
+        res_avail2 = requests.get(avail_url, timeout=15)
+        res_avail2.raise_for_status()
+        avail_data2 = res_avail2.json()
+        slots2 = avail_data2.get("dates", {}).get(date_str, {}).get("slots", [])
+        if expected_slot in slots2:
+            raise Exception(f"Expected slot {expected_slot} to be filtered out, but it was still returned: {slots2}")
+        print_pass(f"Slot {expected_slot} successfully filtered out from available slots.")
+        return True
+
+    except Exception as e:
+        print_fail(f"M365 Availability and Filtering Integration Test failed: {e}")
+        return False
+    finally:
+        # 6. Delete M365 event
+        if event_id and not event_deleted:
+            try:
+                print_info(f"Deleting temporary Touring Hours event: {event_id}...")
+                if calendar_id:
+                    delete_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events/{event_id}"
+                else:
+                    delete_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/events/{event_id}"
+                del_res = requests.delete(delete_url, headers=headers, timeout=10)
+                if del_res.ok:
+                    print_pass("Touring Hours event deleted from calendar.")
+                else:
+                    print_warn(f"Failed to delete event: {del_res.text}")
+            except Exception as e:
+                print_warn(f"Error deleting M365 event: {e}")
+
+        # 7. Delete Firestore public/2029-12-02 document
+        try:
+            print_info(f"Deleting public/{date_str} document from Firestore...")
+            db.collection("public").document(date_str).delete()
+            print_pass(f"public/{date_str} document deleted.")
+        except Exception as e:
+            print_warn(f"Error deleting Firestore public document: {e}")
+
+
+def test_handle_booking_conflict(db):
+    print_info("Running Live Function - Booking Conflict Test with Fake Taken Slot...")
+    date_str = "2029-12-01"
+    time_str = "10:00"
+    try:
+        inventory_ref = db.collection("public").document(date_str)
+        from zoneinfo import ZoneInfo
+        local_tz = ZoneInfo("America/Los_Angeles")
+        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        
+        # Add the slot to taken_slots
+        inventory_ref.set({
+            "taken_slots": [dt_local],
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        print_info(f"Created fake taken slot on {date_str} at {time_str}.")
+
+        # Call handle-booking with that slot
+        url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking"
+        session = get_csrf_session(url)
+        payload = {
+            "date": date_str,
+            "time": time_str,
+            "party_size": 2,
+            "guest": {
+                "name": "Integration Test Conflict",
+                "email": "test-conflict@example.com",
+                "phone": "555-0100"
+            }
+        }
+        print_info(f"Sending POST to {url} expecting conflict (409)...")
+        res = session.post(url, json=payload, timeout=20)
+        
+        # Assert Conflict
+        if res.status_code == 409:
+            print_pass("Conflict (409) returned as expected for already taken slot.")
+            return True
+        else:
+            print_fail(f"Expected status code 409, but got {res.status_code}. Response: {res.text}")
+            return False
+    except Exception as e:
+        print_fail(f"Booking Conflict Test failed: {e}")
+        return False
+    finally:
+        # Clean up the slot
+        try:
+            db.collection("public").document(date_str).delete()
+            print_info(f"Cleaned up fake taken slot document public/{date_str}.")
+        except Exception as e:
+            print_warn(f"Failed to clean up fake taken slot document: {e}")
+
+
+def test_live_pruning_workflow(db):
+    print_info("Running Live Pruning End-to-End Test...")
+    booking_id = "test_prune_booking"
+    date_str = "2029-12-05"
+    time_str = "10:00"
+    url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/prune-unpaid-slots"
+    try:
+        # 1. Create fake booking document
+        from zoneinfo import ZoneInfo
+        local_tz = ZoneInfo("America/Los_Angeles")
+        
+        # created_at is 50 hours ago (so booking_age > 48h TTL)
+        now_utc = datetime.now(timezone.utc)
+        created_at = now_utc - timedelta(hours=50)
+        
+        # tour_datetime is 2029-12-05 10:00 Pacific
+        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        tour_datetime = dt_local.astimezone(timezone.utc)
+        
+        booking_payload = {
+            "payment_status": "PENDING",
+            "created_at": created_at,
+            "tour_datetime": tour_datetime,
+            "party_size": 2,
+            "guest": {
+                "name": "Prune Test",
+                "email": "test-prune@example.com",
+                "phone": "555-1111",
+            },
+            "reminder_sent": 0,
+        }
+        
+        print_info(f"Creating fake expired booking {booking_id} in Firestore...")
+        db.collection("bookings").document(booking_id).set(booking_payload)
+        
+        # 2. Create fake taken slot in public/2029-12-05
+        print_info(f"Marking slot {time_str} as taken in public/{date_str}...")
+        inventory_ref = db.collection("public").document(date_str)
+        inventory_ref.set({
+            "taken_slots": [dt_local],
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        
+        # 3. Request OIDC token & call prune-unpaid-slots live
+        oidc_token = _get_oidc_token(url)
+        headers = {"Authorization": f"Bearer {oidc_token}"}
+        print_info(f"Triggering live prune function at {url}...")
+        res = requests.post(url, headers=headers, timeout=20)
+        res.raise_for_status()
+        print_pass(f"Prune endpoint responded: {res.text}")
+        
+        # 4. Assert booking status updated to CANCELLED_UNPAID
+        booking_doc = db.collection("bookings").document(booking_id).get()
+        if not booking_doc.exists:
+            raise Exception("Fake booking document disappeared!")
+        status = booking_doc.to_dict().get("payment_status")
+        if status != "CANCELLED_UNPAID":
+            raise Exception(f"Expected booking payment_status to be 'CANCELLED_UNPAID', but got '{status}'")
+        print_pass("Booking payment_status successfully updated to CANCELLED_UNPAID.")
+        
+        # 5. Assert slot removed from public/2029-12-05
+        inventory_doc = db.collection("public").document(date_str).get()
+        if inventory_doc.exists:
+            taken = inventory_doc.to_dict().get("taken_slots", [])
+            taken_strs = []
+            for t in taken:
+                if hasattr(t, "to_datetime"):
+                    t_dt = t.to_datetime()
+                else:
+                    t_dt = t
+                if isinstance(t_dt, datetime):
+                    taken_strs.append(t_dt.astimezone(local_tz).strftime("%H:%M"))
+            if time_str in taken_strs:
+                raise Exception(f"Expected slot {time_str} to be removed from public/{date_str}, but it was still present.")
+        print_pass("Slot successfully reclaimed/removed from inventory taken_slots.")
+        return True
+    except Exception as e:
+        print_fail(f"Live Pruning Test failed: {e}")
+        return False
+    finally:
+        # Cleanup
+        print_info("Cleaning up live pruning test mock database objects...")
+        try:
+            db.collection("bookings").document(booking_id).delete()
+        except Exception:
+            pass
+        try:
+            db.collection("public").document(date_str).delete()
+        except Exception:
+            pass
+        print_pass("Cleanup of live pruning test database objects complete.")
+
+
+def test_live_retry_unpaid_workflow(db):
+    print_info("Running Live Retry Unpaid Booking Test...")
+    booking_id = "test_retry_booking"
+    date_str = "2029-12-06"
+    time_str = "10:00"
+    url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/retry-unpaid-bookings"
+    try:
+        # 1. Create fake booking document (unpaid/pending, older than 1 hour cutoff but not expired)
+        from zoneinfo import ZoneInfo
+        local_tz = ZoneInfo("America/Los_Angeles")
+        
+        now_utc = datetime.now(timezone.utc)
+        created_at = now_utc - timedelta(hours=2)
+        
+        dt_local = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M").replace(tzinfo=local_tz)
+        tour_datetime = dt_local.astimezone(timezone.utc)
+        
+        booking_payload = {
+            "payment_status": "PENDING",
+            "created_at": created_at,
+            "tour_datetime": tour_datetime,
+            "party_size": 2,
+            "guest": {
+                "name": "Retry Test Customer",
+                "email": "test-retry@example.com",
+                "phone": "555-2222",
+            },
+            "retry_attempts": 1,
+            "email_sent_count": 0,
+        }
+        
+        print_info(f"Creating fake pending booking {booking_id} in Firestore...")
+        db.collection("bookings").document(booking_id).set(booking_payload)
+        
+        # 2. Get OIDC token & post to retry endpoint
+        oidc_token = _get_oidc_token(url)
+        headers = {"Authorization": f"Bearer {oidc_token}"}
+        print_info(f"Triggering live retry function at {url}...")
+        res = requests.post(url, headers=headers, timeout=25)
+        res.raise_for_status()
+        print_pass(f"Retry endpoint responded: {res.text}")
+        
+        # 3. Assert on booking state updates
+        booking_doc = db.collection("bookings").document(booking_id).get()
+        if not booking_doc.exists:
+            raise Exception("Fake retry booking document disappeared!")
+        
+        data = booking_doc.to_dict() or {}
+        retry_attempts = data.get("retry_attempts", 0)
+        qbo_invoice_id = data.get("integration_ids", {}).get("qbo_invoice_id")
+        payment_link = data.get("payment_link")
+        email_sent = data.get("email_sent")
+        
+        if retry_attempts != 2:
+            raise Exception(f"Expected retry_attempts to be 2, but got {retry_attempts}")
+        print_pass("retry_attempts successfully incremented to 2.")
+        
+        if not qbo_invoice_id:
+            raise Exception("QBO invoice ID is missing in updated booking document!")
+        print_pass(f"QBO invoice successfully generated/recreated: ID={qbo_invoice_id}")
+        
+        if not payment_link:
+            raise Exception("payment_link is missing in updated booking document!")
+        print_pass(f"payment_link successfully updated: {payment_link}")
+        
+        if not email_sent:
+            raise Exception("email_sent flag is missing or false in updated booking document!")
+        print_pass("email_sent flag successfully set to True.")
+        
+        return True
+    except Exception as e:
+        print_fail(f"Live Retry Unpaid Test failed: {e}")
+        return False
+    finally:
+        # Cleanup
+        print_info("Cleaning up live retry test booking...")
+        try:
+            db.collection("bookings").document(booking_id).delete()
+        except Exception:
+            pass
+        print_pass("Cleanup of live retry test booking complete.")
+
+
 def test_successful_booking(db):
     """Attempt a real booking to verify invoice and M365 event creation."""
     print_info("Running Successful Booking Test...")
+    event_id = None
+    m365_event_id = None
+    booking_id = None
+    date_str = "2029-12-07"
+    time_str = "10:00"
+    user_id = None
+    calendar_id = None
+    headers = {}
+    
     try:
-        # Find a public date with no taken slots
-        docs = db.collection("public").limit(20).stream()
-        date_str = None
-        for doc in docs:
-            data = doc.to_dict() or {}
-            taken = data.get("taken_slots", [])
-            if not taken:
-                date_str = doc.id
-                break
-        if not date_str:
-            raise Exception("No available public date found for test booking.")
-        # Choose a time that is likely free
-        time_str = "10:00"
-        # Prepare payload
+        # 1. Fetch M365 auth config and refresh token if needed
+        doc_ref = db.collection("config").document("m365_auth")
+        doc = doc_ref.get()
+        if not doc.exists:
+            print_warn("M365 config/m365_auth document does not exist. Skipping successful booking test.")
+            return True
+
+        m365_data = doc.to_dict() or {}
+        access_token = m365_data.get("access_token")
+        refresh_token = m365_data.get("refresh_token")
+        user_id = m365_data.get("user_id")
+        calendar_id = m365_data.get("calendar_id")
+
+        if not access_token or not refresh_token or not user_id:
+            print_warn("M365 tokens/user_id missing. Skipping successful booking test.")
+            return True
+
+        # Check expiration and refresh if needed
+        expires_at = m365_data.get("expires_at")
+        now_utc = datetime.now(timezone.utc)
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+        else:
+            expires_at = now_utc - timedelta(hours=1)
+
+        if now_utc >= expires_at - timedelta(minutes=5):
+            print_info("M365 token expired. Refreshing for successful booking test...")
+            client_id = m365_data.get("client_id") or os.environ.get("M365_CLIENT_ID")
+            client_secret = m365_data.get("client_secret") or os.environ.get("M365_CLIENT_SECRET")
+            tenant_id = m365_data.get("tenant_id") or os.environ.get("M365_TENANT_ID", "common")
+
+            if not all([client_id, client_secret]):
+                print_warn("Missing M365 credentials. Skipping successful booking test.")
+                return True
+
+            token_url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+            payload = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }
+            res = requests.post(token_url, data=payload, timeout=10)
+            res.raise_for_status()
+            token_response = res.json()
+            access_token = token_response.get("access_token")
+            new_refresh_token = token_response.get("refresh_token")
+            expires_in = token_response.get("expires_in", 3600)
+            new_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+
+            update_data = {
+                "access_token": access_token,
+                "expires_at": new_expires_at,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+            }
+            if new_refresh_token:
+                update_data["refresh_token"] = new_refresh_token
+            doc_ref.update(update_data)
+
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+
+        # 2. Inject temporary 'Touring Hours' event in M365 on far-future date: 2029-12-07
+        event_payload = {
+            "subject": "Touring Hours - Integration Test",
+            "showAs": "free",
+            "body": {
+                "contentType": "HTML",
+                "content": "Temporary Touring Hours for Successful Booking Test",
+            },
+            "start": {
+                "dateTime": f"{date_str}T{time_str}:00",
+                "timeZone": "Pacific Standard Time",
+            },
+            "end": {
+                "dateTime": f"{date_str}T11:00:00",
+                "timeZone": "Pacific Standard Time",
+            },
+        }
+        
+        if calendar_id:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events"
+        else:
+            post_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events"
+
+        print_info(f"Injecting temporary Touring Hours event on {date_str}...")
+        res = requests.post(post_url, headers=headers, json=event_payload, timeout=15)
+        res.raise_for_status()
+        event_id = res.json().get("id")
+        print_pass(f"Touring Hours event injected: {event_id}")
+
+        # Sleep briefly to allow API / propagation sync
+        time.sleep(3)
+
+        # 3. Call handle-booking with that slot
         payload = {
             "date": date_str,
             "time": time_str,
             "party_size": 1,
             "guest": {
-                "name": "Integration Test",
+                "name": "Integration Test Customer",
                 "email": "test-integration@example.com",
                 "phone": "555-0101",
             },
         }
         url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking"
-        res = requests.post(url, json=payload, timeout=20)
+        session = get_csrf_session(url)
+        print_info(f"Sending booking POST for {date_str} at {time_str} to {url}...")
+        res = session.post(url, json=payload, timeout=30)
         if not res.ok:
             raise Exception(
                 f"Booking request failed with status {res.status_code}: {res.text}"
@@ -551,7 +1146,7 @@ def test_successful_booking(db):
         result = res.json()
         if result.get("status") != "success":
             raise Exception(f"Booking API returned error: {result}")
-        # Verify payment link present
+            
         payment_link = result.get("payment_link")
         if not payment_link:
             raise Exception("Payment link missing in successful booking response.")
@@ -559,36 +1154,68 @@ def test_successful_booking(db):
         if not booking_id:
             raise Exception("Booking ID missing in response.")
         print_pass(f"Booking succeeded. ID={booking_id}, payment_link={payment_link}")
-        # Verify Firestore booking document contains integration IDs
+        
+        # 4. Verify Firestore booking document contains integration IDs
         booking_doc = db.collection("bookings").document(booking_id).get()
         if not booking_doc.exists:
             raise Exception("Booking document not found in Firestore.")
         booking_data = booking_doc.to_dict() or {}
         integration = booking_data.get("integration_ids", {})
-        if not integration.get("qbo_invoice_id") or not integration.get(
-            "m365_event_id"
-        ):
+        m365_event_id = integration.get("m365_event_id")
+        qbo_invoice_id = integration.get("qbo_invoice_id")
+        
+        if not qbo_invoice_id or not m365_event_id:
             raise Exception(
-                "Integration IDs (invoice or event) missing in booking document."
+                f"Integration IDs (invoice: {qbo_invoice_id} or event: {m365_event_id}) missing in booking document."
             )
-        print_pass("Invoice and M365 event IDs present in booking record.")
-        # Cleanup: delete the booking and remove the taken slot
-        db.collection("bookings").document(booking_id).delete()
-        # Remove taken slot from inventory
-        inventory_ref = db.collection("public").document(date_str)
-        # Compute the datetime that was booked (local timezone conversion mirrors main.py)
-        from zoneinfo import ZoneInfo
-
-        local_tz = ZoneInfo("America/Los_Angeles")
-        dt_local = datetime.strptime(
-            f"{date_str} {time_str}", "%Y-%m-%d %H:%M"
-        ).replace(tzinfo=local_tz)
-        inventory_ref.update({"taken_slots": firestore.ArrayRemove([dt_local])})
-        print_pass("Cleanup of test booking completed.")
+        print_pass(f"Invoice ({qbo_invoice_id}) and M365 event ID ({m365_event_id}) successfully verified.")
         return True
+
     except Exception as e:
         print_fail(f"Successful Booking Test failed: {e}")
         return False
+    finally:
+        # 5. Clean up Microsoft Calendar Events
+        if m365_event_id:
+            try:
+                print_info(f"Deleting booked tour calendar event: {m365_event_id}...")
+                if calendar_id:
+                    del_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events/{m365_event_id}"
+                else:
+                    del_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/events/{m365_event_id}"
+                requests.delete(del_url, headers=headers, timeout=10)
+                print_pass("Booked tour event deleted from calendar.")
+            except Exception as e:
+                print_warn(f"Failed to delete booked event from calendar: {e}")
+
+        if event_id:
+            try:
+                print_info(f"Deleting temporary Touring Hours event: {event_id}...")
+                if calendar_id:
+                    del_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendars/{calendar_id}/events/{event_id}"
+                else:
+                    del_url = f"https://graph.microsoft.com/v1.0/users/{user_id}/events/{event_id}"
+                requests.delete(del_url, headers=headers, timeout=10)
+                print_pass("Touring Hours event deleted from calendar.")
+            except Exception as e:
+                print_warn(f"Failed to delete Touring Hours event: {e}")
+
+        # 6. Delete Firestore booking document
+        if booking_id:
+            try:
+                print_info(f"Deleting fake booking document {booking_id} from Firestore...")
+                db.collection("bookings").document(booking_id).delete()
+                print_pass("Booking document deleted.")
+            except Exception as e:
+                print_warn(f"Failed to delete booking document: {e}")
+
+        # 7. Delete Firestore public inventory document
+        try:
+            print_info(f"Deleting public/{date_str} document from Firestore...")
+            db.collection("public").document(date_str).delete()
+            print_pass(f"public/{date_str} document deleted.")
+        except Exception as e:
+            print_warn(f"Error deleting Firestore public document: {e}")
 
 
 def main():
@@ -601,31 +1228,38 @@ def main():
 
     # Run tests sequentially
     tests = [
-        ("Firestore", lambda: test_firestore(db)),
-        ("QBO Connection", lambda: test_qbo(db)),
-        ("M365 Connection", lambda: test_m365(db)),
-        ("Live Booking Endpoint", test_booking_function),
-        ("Live Pruning Endpoint", test_pruning_function),
+        ("Firestore Core Operations", lambda: test_firestore(db)),
+        ("QBO Integration Connection", lambda: test_qbo(db)),
+        ("M365 Integration Connection", lambda: test_m365(db)),
+        ("Live Booking Endpoint CORS/Validation", test_booking_function),
+        ("Live Pruning Cloud Scheduler Auth", test_pruning_function),
+        ("Live Retry Cloud Scheduler Auth", test_retry_unpaid_function),
+        ("M365 Availability and Filtering Flow", lambda: test_m365_availability_and_filtering(db)),
+        ("Live Booking Double-Booking Conflict Detection", lambda: test_handle_booking_conflict(db)),
+        ("Live Pruning Scheduled Maintenance Execution", lambda: test_live_pruning_workflow(db)),
+        ("Live Retry Unpaid Scheduled Maintenance Execution", lambda: test_live_retry_unpaid_workflow(db)),
+        ("Live Happy Path E2E Booking Transaction", lambda: test_successful_booking(db)),
     ]
 
     failed = False
     for name, test_func in tests:
         try:
+            print_info(f"=== Running test: {name} ===")
             success = test_func()
             if not success:
                 failed = True
         except SystemExit as se:
-            # Re-raise SystemExit to preserve warning exit codes
             raise se
         except Exception as e:
             print_fail(f"Unexpected error running {name} test: {e}")
             failed = True
+        print()
 
     if failed:
         print_fail("Some verification checks failed.")
         sys.exit(2)
 
-    print_pass("All verification checks passed.")
+    print_pass("All verification checks passed successfully.")
     sys.exit(0)
 
 

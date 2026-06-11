@@ -32,6 +32,8 @@
     overflow: hidden;
     font-family: var(--font-sans);
     color: var(--text-charcoal);
+    container-type: inline-size;
+    container-name: booking-widget;
   }
 
   #bodie-booking-widget h1, 
@@ -260,6 +262,8 @@
     cursor: pointer;
     background: var(--bg-card);
     transition: var(--transition-smooth);
+    font-family: inherit;
+    color: inherit;
   }
 
   .bb-slot:hover:not(.full) {
@@ -335,6 +339,30 @@
     box-shadow: 0 0 0 3px rgba(140, 98, 57, 0.15);
   }
 
+  /* Modern declarative user validation styles */
+  .bb-input:user-valid {
+    border-color: var(--success-olive);
+    background-color: var(--success-light);
+  }
+
+  .bb-input:user-valid:focus {
+    box-shadow: 0 0 0 3px rgba(74, 120, 86, 0.15);
+  }
+
+  .bb-input:user-invalid {
+    border-color: var(--error-terracotta);
+    background-color: var(--error-light);
+  }
+
+  .bb-input:user-invalid:focus {
+    box-shadow: 0 0 0 3px rgba(184, 76, 76, 0.15);
+  }
+
+  /* Style parent form-group label terracotta color when child input is invalid */
+  .bb-form-group:has(.bb-input:user-invalid) .bb-label {
+    color: var(--error-terracotta);
+  }
+
   /* Buttons */
   .bb-btn-row {
     display: flex;
@@ -354,6 +382,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    text-decoration: none;
   }
 
   .bb-btn-primary {
@@ -503,8 +532,8 @@
     text-align: right;
   }
 
-  /* Mobile Adjustments */
-  @media (max-width: 480px) {
+  /* Mobile Adjustments using Container Queries */
+  @container booking-widget (max-width: 480px) {
     #bodie-booking-widget {
       padding: 24px;
       margin: 20px auto;
@@ -516,9 +545,23 @@
       gap: 2px;
     }
   }
+
+  /* Visually Hidden Screen Reader Only CSS */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 </style>
 
-<div id="bodie-booking-widget" role="main">
+<section id="bodie-booking-widget" aria-label="Bodie Guided Tours Booking Widget">
+  <h1 class="sr-only">Bodie Hills Guided Tour Booking</h1>
   
   <div id="bb-loading" class="bb-loading-overlay" aria-hidden="true">
     <div class="bb-spinner"></div>
@@ -534,46 +577,46 @@
   </div>
 
   <div class="bb-step active" id="step-pane-1">
-    <h2>🏔 Select Tour Date</h2>
+    <h2 id="bb-step-heading-1" tabindex="-1"><span aria-hidden="true">🏔</span> Select Tour Date</h2>
     <p>Please choose a date from the calendar. Highlighted dates have open tour guide availability blocks scheduled by the Park Ranger.</p>
     
     <div class="bb-calendar-header">
-      <button class="bb-month-btn" onclick="bbChangeMonth(-1)" aria-label="Previous month">‹</button>
+      <button class="bb-month-btn" onclick="bbChangeMonth(-1)" aria-label="Previous month"><span aria-hidden="true">‹</span></button>
       <span id="bb-month-label">June 2026</span>
-      <button class="bb-month-btn" onclick="bbChangeMonth(1)" aria-label="Next month">›</button>
+      <button class="bb-month-btn" onclick="bbChangeMonth(1)" aria-label="Next month"><span aria-hidden="true">›</span></button>
     </div>
 
     <div class="bb-calendar-grid" id="bb-calendar-grid">
       </div>
     
     <div class="bb-btn-row">
-      <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Select Time Slot →</button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Select Time Slot <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-2">
-    <h2>⏰ Select Time</h2>
+    <h2 id="bb-step-heading-2" tabindex="-1"><span aria-hidden="true">⏰</span> Select Time</h2>
     <p>Choose an available time slot for <strong id="bb-selected-date-display"></strong>. The park enforces a one-group-per-slot policy.</p>
     
     <div class="bb-slots-grid" id="bb-slots-grid">
       </div>
 
     <div class="bb-btn-row">
-      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(1)">← Change Date</button>
-      <button class="bb-btn bb-btn-primary" id="bb-to-step-3" disabled onclick="bbGoTo(3)">Guest Details →</button>
+      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(1)"><span aria-hidden="true">←</span> Change Date</button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-3" disabled onclick="bbGoTo(3)">Guest Details <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-3">
-    <h2>👤 Guest Information</h2>
+    <h2 id="bb-step-heading-3" tabindex="-1"><span aria-hidden="true">👤</span> Guest Information</h2>
     <p>Provide details to secure your state park booking reservation. Double-booking holds are applied atomically.</p>
 
-    <div id="bb-error-box" class="bb-info-box error" style="display: none;">
-      <span class="bb-info-box-icon">⚠️</span>
+    <div id="bb-error-box" class="bb-info-box error" style="display: none;" role="alert">
+      <span class="bb-info-box-icon" aria-hidden="true">⚠️</span>
       <span id="bb-error-message">Please fill in all required fields.</span>
     </div>
 
-    <form id="bb-booking-form" onsubmit="event.preventDefault();">
+    <form id="bb-booking-form" onsubmit="event.preventDefault(); bbSubmitBooking();">
       <div class="bb-form-group">
         <label class="bb-label" for="guest-name">Full Name *</label>
         <input class="bb-input" id="guest-name" required placeholder="Jane Doe" type="text" autocomplete="name">
@@ -596,24 +639,26 @@
     </form>
 
     <div class="bb-btn-row">
-      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(2)">← Change Time</button>
-      <button class="bb-btn bb-btn-primary" onclick="bbSubmitBooking()">Confirm Booking Hold →</button>
+      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(2)"><span aria-hidden="true">←</span> Change Time</button>
+      <button class="bb-btn bb-btn-primary" id="bb-confirm-booking-btn" type="submit" form="bb-booking-form">Confirm Booking Hold <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-4">
     <div class="bb-confirmation">
       <div class="bb-success-icon">✓</div>
-      <h2>Booking Hold Secured!</h2>
-      <p>Your guided tour reservation has been placed on hold. To finalize your booking and prevent automatic release, please complete the invoice payment.</p>
+      <h2 id="bb-step-heading-4" tabindex="-1">Booking Hold Secured!</h2>
+      <p>We have placed your guided tour reservation on hold. To finalize your booking and prevent automatic release, please complete the secure payment link sent to your email.</p>
 
       <div class="bb-payment-card">
-        <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-copper);">Secure QuickBooks Payment</span>
-        <h3 style="margin: 12px 0 20px 0; font-size: 1.5rem;" id="bb-amount-display">$0.00 DUE</h3>
-        
-        <a id="bb-pay-link" href="#" target="_blank" rel="noopener">
-          <button class="bb-btn bb-btn-primary" style="width: 100%;">Pay Invoice Now →</button>
-        </a>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; color: var(--accent-copper);">
+          <span style="font-size: 1.3rem;">✉️</span>
+          <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Check Your Email Inbox</span>
+        </div>
+        <h3 style="margin: 0 0 16px 0; font-size: 1.5rem; text-align: center;" id="bb-amount-display">$0.00 DUE</h3>
+        <p style="font-size: 0.95rem; text-align: center; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
+          A secure QuickBooks Online payment invoice has been sent directly to <strong id="bb-confirm-email">your email</strong>. Please check your inbox (and spam/promotions folder) and click the <strong>"Pay Now"</strong> button inside that email to complete payment instantly via credit card.
+        </p>
 
         <div class="bb-payment-meta">
           <span class="bb-meta-label">Booking ID</span>
@@ -629,17 +674,19 @@
 
       <div class="bb-info-box info">
         <span class="bb-info-box-icon">ℹ️</span>
-        <span>Notice: A copy of this invoice details, payment link, and M365 calendar confirmation has been sent to your email. Unpaid holds will release automatically after the TTL expires.</span>
+        <span>Your booking is held! Please check your email and complete your payment shortly to secure your spot, as unpaid reservations are automatically released to open slots for other visitors.</span>
       </div>
     </div>
   </div>
-</div>
+</section>
 
 <script>
+(function() {
+  "use strict";
+
   // Config Options
   const BOOKING_API = 'https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking';
-  const FIREBASE_PROJECT = 'bodie-tours-prod';
-  const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/bodie-tours/documents`;
+  const M365_AVAILABILITY_API = 'https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-free-availability';
   const TOUR_PRICE = 25.00;
 
   // State Variables
@@ -648,17 +695,80 @@
     currentMonth: null,
     selectedDate: null,   
     selectedTime: null,   
-    availableDates: {}    
+    availableDates: {},
+    redirectTimeout: null
   };
 
   // Initialize Widget
   async function bbInit() {
+    bbClearTimers();
+    bbSetupEventListeners();
     const now = new Date();
     bbState.currentYear = now.getFullYear();
     bbState.currentMonth = now.getMonth();
     
     await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
     bbRenderCalendar();
+  }
+
+  // Setup Event Delegation
+  function bbSetupEventListeners() {
+    const calendarGrid = document.getElementById('bb-calendar-grid');
+    if (calendarGrid && !calendarGrid.dataset.listenerAttached) {
+      calendarGrid.addEventListener('click', function(event) {
+        const dayBtn = event.target.closest('.bb-day.available');
+        if (dayBtn) {
+          const dateStr = dayBtn.getAttribute('data-date');
+          bbSelectDate(dateStr, dayBtn);
+        }
+      });
+      calendarGrid.dataset.listenerAttached = 'true';
+    }
+
+    const slotsGrid = document.getElementById('bb-slots-grid');
+    if (slotsGrid && !slotsGrid.dataset.listenerAttached) {
+      slotsGrid.addEventListener('click', function(event) {
+        const slotBtn = event.target.closest('.bb-slot:not(.full)');
+        if (slotBtn) {
+          const apiTime = slotBtn.getAttribute('data-time');
+          document.querySelectorAll('.bb-slot').forEach(s => {
+            s.classList.remove('selected');
+            s.setAttribute('aria-pressed', 'false');
+          });
+          slotBtn.classList.add('selected');
+          slotBtn.setAttribute('aria-pressed', 'true');
+          bbState.selectedTime = apiTime;
+          document.getElementById('bb-to-step-3').disabled = false;
+        }
+      });
+      slotsGrid.dataset.listenerAttached = 'true';
+    }
+
+    const form = document.getElementById('bb-booking-form');
+    if (form && !form.dataset.listenerAttached) {
+      form.addEventListener('invalid', function(event) {
+        const errBox = document.getElementById('bb-error-box');
+        const errMsg = document.getElementById('bb-error-message');
+        const partyInput = document.getElementById('guest-party');
+        const partySize = parseInt(partyInput.value, 10);
+        
+        if (partySize && (partySize < 1 || partySize > 20)) {
+          errMsg.textContent = 'Party size must be between 1 and 20.';
+        } else {
+          errMsg.textContent = 'Please fill in all required fields.';
+        }
+        errBox.style.display = 'flex';
+      }, true);
+      form.dataset.listenerAttached = 'true';
+    }
+  }
+
+  // Clear timers helper
+  function bbClearTimers() {
+    if (bbState.redirectTimeout) {
+      clearTimeout(bbState.redirectTimeout);
+      bbState.redirectTimeout = null;
+    }
   }
 
   // Fetch month availability from M365 endpoint
@@ -670,7 +780,7 @@
     const endDayStr = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
 
     // Construct M365 endpoint URL
-    const url = `/m365/free-availability?start=${startDayStr}&end=${endDayStr}`;
+    const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}`;
 
     try {
       const res = await fetch(url);
@@ -681,12 +791,15 @@
 
       // data.dates is an object keyed by date strings
       Object.entries(data.dates || {}).forEach(([docDate, doc]) => {
-        // Ensure date is within range (already filtered by endpoint)
-        const fields = doc.slots || {};
-        // Check for any AVAILABLE slots
-        const hasOpenSlots = Object.values(fields).some(s => s.status === "AVAILABLE");
-        if (hasOpenSlots) {
-          bbState.availableDates[docDate] = fields;
+        let slots = doc.slots || [];
+        if (!Array.isArray(slots) && typeof slots === 'object') {
+          slots = Object.entries(slots).map(([timeKey, slotVal]) => ({
+            time: timeKey,
+            status: slotVal.status
+          }));
+        }
+        if (Array.isArray(slots) && slots.length > 0) {
+          bbState.availableDates[docDate] = slots;
         }
       });
     } catch (err) {
@@ -697,7 +810,21 @@
   }
 
   function parseSlotKey(key, dateStr) {
-    if (key.includes('T') || (key.length > 5 && !isNaN(Date.parse(key)))) {
+    if (key.includes('T')) {
+      const timePart = key.split('T')[1].substring(0, 5); // e.g. "10:00"
+      const parts = timePart.split(':');
+      if (parts.length >= 2) {
+        const hours = parseInt(parts[0], 10);
+        const minutes = parseInt(parts[1], 10);
+        const suffix = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours % 12 || 12;
+        const displayMinutes = String(minutes).padStart(2, '0');
+        const displayTime = `${displayHours}:${displayMinutes} ${suffix}`;
+        const apiTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        return { displayTime, apiTime };
+      }
+    }
+    if (key.length > 5 && !isNaN(Date.parse(key))) {
       const d = new Date(key);
       if (!isNaN(d.getTime())) {
         const displayTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
@@ -759,16 +886,25 @@
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayDate = new Date(currentYear, currentMonth, d);
 
-      if (dayDate < today || !bbState.availableDates[dateStr]) {
+      const monthName = monthNames[currentMonth];
+      const isUnavailable = (dayDate < today || !bbState.availableDates[dateStr]);
+      const statusText = isUnavailable ? 'unavailable' : 'available';
+      btn.setAttribute('aria-label', `${monthName} ${d}, ${currentYear}, ${statusText}`);
+
+      if (isUnavailable) {
         btn.classList.add('unavailable');
         btn.setAttribute('aria-disabled', 'true');
       } else {
         btn.classList.add('available');
-        btn.onclick = () => bbSelectDate(dateStr, btn);
       }
+      
+      btn.setAttribute('data-date', dateStr);
       
       if (bbState.selectedDate === dateStr) {
         btn.classList.add('selected');
+        btn.setAttribute('aria-pressed', 'true');
+      } else {
+        btn.setAttribute('aria-pressed', 'false');
       }
       
       grid.appendChild(btn);
@@ -776,6 +912,7 @@
   }
 
   async function bbChangeMonth(delta) {
+    bbClearTimers();
     bbState.currentMonth += delta;
     if (bbState.currentMonth < 0) {
       bbState.currentMonth = 11;
@@ -793,15 +930,19 @@
     bbState.selectedDate = dateStr;
     bbState.selectedTime = null; 
     
-    document.querySelectorAll('.bb-day').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.bb-day').forEach(el => {
+      el.classList.remove('selected');
+      el.setAttribute('aria-pressed', 'false');
+    });
     element.classList.add('selected');
+    element.setAttribute('aria-pressed', 'true');
     
     document.getElementById('bb-to-step-2').disabled = false;
   }
 
   function bbPopulateSlots() {
     const dateStr = bbState.selectedDate;
-    const slots = bbState.availableDates[dateStr] || {};
+    const slots = bbState.availableDates[dateStr] || [];
     const grid = document.getElementById('bb-slots-grid');
     grid.innerHTML = '';
 
@@ -810,41 +951,51 @@
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
     });
 
-    const sortedSlots = Object.entries(slots).sort(([a],[b]) => a.localeCompare(b));
-    
-    if (sortedSlots.length === 0) {
+    if (!Array.isArray(slots) || slots.length === 0) {
       grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: 0.95rem;">No guides available on this day.</div>';
       document.getElementById('bb-to-step-3').disabled = true;
       return;
     }
 
-    sortedSlots.forEach(([key, value]) => {
-      const taken = parseInt(value?.mapValue?.fields?.taken?.integerValue || 0, 10);
-      const status = value?.mapValue?.fields?.status?.stringValue || 'AVAILABLE';
-      
-      const isFull = status === 'SOLD_OUT' || taken > 0;
-      const { displayTime, apiTime } = parseSlotKey(key, dateStr);
+    const sortedSlots = [...slots].sort((a, b) => {
+      const timeA = typeof a === 'object' ? a.time : a;
+      const timeB = typeof b === 'object' ? b.time : b;
+      return timeA.localeCompare(timeB);
+    });
 
-      const slotBtn = document.createElement('div');
-      slotBtn.className = 'bb-slot';
-      if (isFull) slotBtn.classList.add('full');
-      
-      slotBtn.innerHTML = `
-        <span class="bb-slot-time">${displayTime}</span>
-        <span class="bb-slot-status">${isFull ? 'Sold Out' : 'Available'}</span>
-      `;
-      
-      if (!isFull) {
-        slotBtn.onclick = () => {
-          document.querySelectorAll('.bb-slot').forEach(s => s.classList.remove('selected'));
-          slotBtn.classList.add('selected');
-          bbState.selectedTime = apiTime;
-          document.getElementById('bb-to-step-3').disabled = false;
-        };
+    sortedSlots.forEach(slot => {
+      const isObject = typeof slot === 'object' && slot !== null;
+      const slotStr = isObject ? slot.time : slot;
+      const isFull = isObject && slot.status === 'SOLD_OUT';
+
+      const { displayTime, apiTime } = parseSlotKey(slotStr, dateStr);
+
+      const slotBtn = document.createElement('button');
+      slotBtn.setAttribute('type', 'button');
+      if (isFull) {
+        slotBtn.className = 'bb-slot full';
+        slotBtn.setAttribute('aria-label', `${displayTime}, sold out`);
+        slotBtn.setAttribute('disabled', 'true');
+        slotBtn.innerHTML = `
+          <span class="bb-slot-time">${displayTime}</span>
+          <span class="bb-slot-status">Sold Out</span>
+        `;
+      } else {
+        slotBtn.className = 'bb-slot';
+        slotBtn.setAttribute('aria-label', `${displayTime}, available`);
+        slotBtn.innerHTML = `
+          <span class="bb-slot-time">${displayTime}</span>
+          <span class="bb-slot-status">Available</span>
+        `;
       }
+      
+      slotBtn.setAttribute('data-time', apiTime);
       
       if (bbState.selectedTime === apiTime) {
         slotBtn.classList.add('selected');
+        slotBtn.setAttribute('aria-pressed', 'true');
+      } else {
+        slotBtn.setAttribute('aria-pressed', 'false');
       }
 
       grid.appendChild(slotBtn);
@@ -908,7 +1059,9 @@
       const result = await response.json();
 
       if (response.ok && result.status === 'success') {
-        document.getElementById('bb-pay-link').href = result.payment_link;
+        const confirmEmail = document.getElementById('bb-confirm-email');
+        if (confirmEmail) confirmEmail.textContent = email;
+
         document.getElementById('bb-amount-display').textContent = `$${(partySize * TOUR_PRICE).toFixed(2)} DUE`;
         document.getElementById('bb-confirm-id').textContent = result.booking_id;
         document.getElementById('bb-confirm-party').textContent = `${partySize} Guest(s)`;
@@ -918,11 +1071,6 @@
           month: 'short', day: 'numeric', year: 'numeric'
         });
         document.getElementById('bb-confirm-datetime').textContent = `${displayDate} @ ${timeLabel}`;
-        
-        // Optional automatic redirect to payment after a short delay (4 seconds)
-        setTimeout(() => {
-          window.location.href = result.payment_link;
-        }, 4000);
         
         bbGoTo(4);
       } else {
@@ -939,6 +1087,10 @@
   }
 
   function bbGoTo(step) {
+    if (step < 4) {
+      bbClearTimers();
+    }
+
     document.querySelectorAll('.bb-step').forEach(pane => pane.classList.remove('active'));
     document.getElementById(`step-pane-${step}`).classList.add('active');
     
@@ -959,6 +1111,12 @@
       bbPopulateSlots();
     }
     
+    // Focus the step heading programmatically
+    const heading = document.getElementById(`bb-step-heading-${step}`);
+    if (heading) {
+      heading.focus({ preventScroll: true });
+    }
+
     window.scrollTo({
       top: document.getElementById('bodie-booking-widget').offsetTop - 30,
       behavior: 'smooth'
@@ -978,5 +1136,17 @@
     loading.classList.remove('active');
   }
 
-  bbInit();
+  // Explicitly export entry-point functions to window scope
+  window.bbChangeMonth = bbChangeMonth;
+  window.bbGoTo = bbGoTo;
+  window.bbSubmitBooking = bbSubmitBooking;
+  window.bbInit = bbInit;
+
+  // JavaScript Initialization Timing Fix
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bbInit);
+  } else {
+    bbInit();
+  }
+})();
 </script>
