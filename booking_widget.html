@@ -24,7 +24,7 @@
     border-radius: 12px;
     box-shadow: 0 8px 30px rgba(45, 43, 42, 0.05);
     width: 100%;
-    max-width: 580px;
+    max-width: 950px; /* Expanded from 580px to 950px to allow filling larger parent containers beautifully */
     margin: 40px auto;
     padding: 40px;
     box-sizing: border-box;
@@ -546,6 +546,38 @@
     }
   }
 
+  /* Desktop & Tablet Adjustments using Container Queries */
+  @container booking-widget (min-width: 650px) {
+    .bb-tour-cards-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      max-height: 580px; /* Expanded max-height to let grid rows render cleanly without unnecessary scrolling */
+      gap: 20px;
+      padding-right: 8px;
+    }
+
+    /* Center the calendar and limit its width to keep it balanced and readable */
+    .bb-calendar-grid,
+    .bb-calendar-header {
+      max-width: 580px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .bb-calendar-header {
+      margin-bottom: 20px;
+    }
+
+    /* Style the guest information form fields in a 2x2 grid */
+    #bb-booking-form {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    #mines-vehicle-ack-group {
+      grid-column: span 2;
+    }
+  }
+
   /* Visually Hidden Screen Reader Only CSS */
   .sr-only {
     position: absolute;
@@ -557,6 +589,164 @@
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+  }
+
+  /* Premium Tour Selection Cards Styling */
+  .bb-tour-cards-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 28px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+
+  /* Custom scrollbar for cards container */
+  .bb-tour-cards-container::-webkit-scrollbar {
+    width: 6px;
+  }
+  .bb-tour-cards-container::-webkit-scrollbar-track {
+    background: var(--bg-warm-sand);
+    border-radius: 3px;
+  }
+  .bb-tour-cards-container::-webkit-scrollbar-thumb {
+    background: var(--border-sand);
+    border-radius: 3px;
+  }
+  .bb-tour-cards-container::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-copper);
+  }
+
+  .bb-tour-card {
+    background: var(--bg-warm-sand);
+    border: 1.5px solid var(--border-sand);
+    border-radius: 12px;
+    padding: 20px;
+    cursor: pointer;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: left;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    flex-shrink: 0; /* Prevent flex container from shrinking the cards */
+  }
+
+  /* Micro-animations and interaction */
+  .bb-tour-card:hover {
+    border-color: var(--accent-copper);
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(140, 98, 57, 0.08);
+  }
+
+  .bb-tour-card:active {
+    transform: translateY(-1px);
+  }
+
+  /* Selected State with Forest Green accent */
+  .bb-tour-card.selected {
+    border-color: #1e3f20;
+    background: #ffffff;
+    box-shadow: 0 0 0 2px #1e3f20, 0 12px 30px rgba(30, 63, 32, 0.08);
+  }
+
+  .bb-tour-card.selected::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    background: #1e3f20;
+  }
+
+  .bb-tour-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+
+  .bb-tour-title {
+    font-family: var(--font-serif);
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-charcoal);
+    margin: 0;
+    transition: var(--transition-smooth);
+    line-height: 1.3;
+  }
+
+  .bb-tour-card.selected .bb-tour-title {
+    color: #1e3f20;
+  }
+
+  .bb-tour-duration {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--accent-copper);
+    background: var(--accent-light);
+    padding: 4px 10px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(140, 98, 57, 0.12);
+    flex-shrink: 0;
+  }
+
+  .bb-tour-desc {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0 0 16px 0 !important;
+  }
+
+  .bb-tour-price {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-charcoal);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .bb-tour-price-unit {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+
+  .bb-tour-badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .bb-tour-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .badge-green {
+    background: #edf2ee;
+    color: #1e3f20;
+    border: 1px solid rgba(30, 63, 32, 0.1);
+  }
+
+  .badge-copper {
+    background: var(--accent-light);
+    color: var(--accent-copper);
+    border: 1px solid rgba(140, 98, 57, 0.1);
   }
 </style>
 
@@ -570,13 +760,95 @@
 
   <div class="bb-progress" aria-label="Booking steps progress">
     <div id="bb-progress-bar" class="bb-progress-bar"></div>
-    <div class="bb-progress-step active" id="step-dot-1">1</div>
-    <div class="bb-progress-step" id="step-dot-2">2</div>
-    <div class="bb-progress-step" id="step-dot-3">3</div>
-    <div class="bb-progress-step" id="step-dot-4">4</div>
+    <div class="bb-progress-step active" id="step-dot-0">1</div>
+    <div class="bb-progress-step" id="step-dot-1">2</div>
+    <div class="bb-progress-step" id="step-dot-2">3</div>
+    <div class="bb-progress-step" id="step-dot-3">4</div>
+    <div class="bb-progress-step" id="step-dot-4">5</div>
   </div>
 
-  <div class="bb-step active" id="step-pane-1">
+  <div class="bb-step active" id="step-pane-0">
+    <h2 id="bb-step-heading-0" tabindex="-1"><span aria-hidden="true">🗺️</span> Select Tour Type</h2>
+    <p>Please choose a guided tour. Each tour offers a unique ranger-led experience exploring the history and architecture of Bodie.</p>
+    
+    <div class="bb-tour-cards-container">
+      <!-- Card 1: Private Town Tour of Bodie -->
+      <div class="bb-tour-card" data-tour="private-town" onclick="bbSelectTour('private-town')">
+        <div class="bb-tour-card-header">
+          <h3 class="bb-tour-title">Private Town Tour of Bodie</h3>
+          <span class="bb-tour-duration">2 hrs</span>
+        </div>
+        <p class="bb-tour-desc">A private walking tour through the historic streets of Bodie ghost town, tailored to your group's interests with exclusive historical stories.</p>
+        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/person extra)</span></div>
+        <div class="bb-tour-badges">
+          <span class="bb-tour-badge badge-green">Walking Tour</span>
+          <span class="bb-tour-badge badge-copper">Private Guide</span>
+        </div>
+      </div>
+      
+      <!-- Card 2: Living at the Lake Tour -->
+      <div class="bb-tour-card" data-tour="living-lake" onclick="bbSelectTour('living-lake')">
+        <div class="bb-tour-card-header">
+          <h3 class="bb-tour-title">Living at the Lake Tour</h3>
+          <span class="bb-tour-duration">2 hrs</span>
+        </div>
+        <p class="bb-tour-desc">Explore the unique geology and ecology of the Mono Lake Tufa State Natural Reserve. Walk among the mysterious limestone tufa towers.</p>
+        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/person extra)</span></div>
+        <div class="bb-tour-badges">
+          <span class="bb-tour-badge badge-green">Walking Tour</span>
+          <span class="bb-tour-badge badge-copper">Mono Lake Reserve</span>
+        </div>
+      </div>
+      
+      <!-- Card 3: Bodie Twilight Tours -->
+      <div class="bb-tour-card" data-tour="twilight" onclick="bbSelectTour('twilight')">
+        <div class="bb-tour-card-header">
+          <h3 class="bb-tour-title">Bodie Twilight Tours</h3>
+          <span class="bb-tour-duration">2 hrs</span>
+        </div>
+        <p class="bb-tour-desc">Experience Bodie ghost town after hours as day transitions to night. Eerie stories of gold miners, legends, and unexplained events.</p>
+        <div class="bb-tour-price">$300.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$60/person extra)</span></div>
+        <div class="bb-tour-badges">
+          <span class="bb-tour-badge badge-green">June–Sept Only</span>
+          <span class="bb-tour-badge badge-copper">5:00 PM Only</span>
+        </div>
+      </div>
+      
+      <!-- Card 4: Bus Company / Large Group Tours -->
+      <div class="bb-tour-card" data-tour="large-group" onclick="bbSelectTour('large-group')">
+        <div class="bb-tour-card-header">
+          <h3 class="bb-tour-title">Bus Company / Large Group Tours</h3>
+          <span class="bb-tour-duration">1 hr</span>
+        </div>
+        <p class="bb-tour-desc">A structured 1-hour walking tour designed for bus companies, schools, and large groups seeking a comprehensive historical overview.</p>
+        <div class="bb-tour-price">$25.00 <span class="bb-tour-price-unit">per person</span></div>
+        <div class="bb-tour-badges">
+          <span class="bb-tour-badge badge-green">Large Group</span>
+          <span class="bb-tour-badge badge-copper">Walking Tour</span>
+        </div>
+      </div>
+      
+      <!-- Card 5: Mines, Mills, Rails and Ruins Tour -->
+      <div class="bb-tour-card" data-tour="mines" onclick="bbSelectTour('mines')">
+        <div class="bb-tour-card-header">
+          <h3 class="bb-tour-title">Mines, Mills, Rails and Ruins Tour</h3>
+          <span class="bb-tour-duration">3 hrs</span>
+        </div>
+        <p class="bb-tour-desc">Rugged driving tour through the Bodie Mining District. High-clearance, 4WD vehicle required (provided by participants). No interior mine access.</p>
+        <div class="bb-tour-price">$100.00 <span class="bb-tour-price-unit">per person ($400 minimum)</span></div>
+        <div class="bb-tour-badges">
+          <span class="bb-tour-badge badge-green">4WD Vehicle Required</span>
+          <span class="bb-tour-badge badge-copper">Max Party 15</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="bb-btn-row">
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-1" disabled onclick="bbGoTo(1)">Select Tour Date <span aria-hidden="true">→</span></button>
+    </div>
+  </div>
+
+  <div class="bb-step" id="step-pane-1">
     <h2 id="bb-step-heading-1" tabindex="-1"><span aria-hidden="true">🏔</span> Select Tour Date</h2>
     <p>Please choose a date from the calendar. Highlighted dates have open tour guide availability blocks scheduled by the Park Ranger.</p>
     
@@ -590,6 +862,7 @@
       </div>
     
     <div class="bb-btn-row">
+      <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(0)"><span aria-hidden="true">←</span> Change Tour</button>
       <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Select Time Slot <span aria-hidden="true">→</span></button>
     </div>
   </div>
@@ -635,6 +908,14 @@
       <div class="bb-form-group">
         <label class="bb-label" for="guest-party">Party Size * (Max 20)</label>
         <input class="bb-input" id="guest-party" required placeholder="4" type="number" min="1" max="20">
+      </div>
+
+      <!-- Conditional Checkbox for Mines Driving Tour -->
+      <div class="bb-form-group" id="mines-vehicle-ack-group" style="display: none;">
+        <label class="bb-label" style="display: flex; align-items: flex-start; gap: 10px; text-transform: none; font-weight: normal; cursor: pointer; line-height: 1.4;">
+          <input type="checkbox" id="mines-vehicle-ack" style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent-copper);">
+          <span>I confirm that I will provide a high-clearance, 4-wheel drive vehicle *</span>
+        </label>
       </div>
     </form>
 
@@ -689,8 +970,61 @@
   const M365_AVAILABILITY_API = 'https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-free-availability';
   const TOUR_PRICE = 25.00;
 
+  const TOURS = {
+    'private-town': {
+      name: 'Private Town Tour of Bodie',
+      duration: 2,
+      maxParty: 20,
+      priceDesc: '$250 minimum (1-5 people), +$50/person extra',
+      calcPrice: function(partySize) {
+        if (partySize <= 5) return 250.00;
+        return 250.00 + (partySize - 5) * 50.00;
+      }
+    },
+    'living-lake': {
+      name: 'Living at the Lake Tour',
+      duration: 2,
+      maxParty: 20,
+      priceDesc: '$250 minimum (1-5 people), +$50/person extra',
+      calcPrice: function(partySize) {
+        if (partySize <= 5) return 250.00;
+        return 250.00 + (partySize - 5) * 50.00;
+      }
+    },
+    'twilight': {
+      name: 'Bodie Twilight Tours',
+      duration: 2,
+      maxParty: 20,
+      priceDesc: '$300 minimum (1-5 people), +$60/person extra',
+      calcPrice: function(partySize) {
+        if (partySize <= 5) return 300.00;
+        return 300.00 + (partySize - 5) * 60.00;
+      }
+    },
+    'large-group': {
+      name: 'Bus Company / Large Group Tours',
+      duration: 1,
+      maxParty: 20,
+      priceDesc: '$25 per person',
+      calcPrice: function(partySize) {
+        return partySize * 25.00;
+      }
+    },
+    'mines': {
+      name: 'Mines, Mills, Rails and Ruins Tour',
+      duration: 3,
+      maxParty: 15,
+      priceDesc: '$100 per person ($400 minimum)',
+      calcPrice: function(partySize) {
+        if (partySize <= 4) return 400.00;
+        return partySize * 100.00;
+      }
+    }
+  };
+
   // State Variables
   let bbState = {
+    selectedTour: null,
     currentYear: null,
     currentMonth: null,
     selectedDate: null,   
@@ -707,8 +1041,7 @@
     bbState.currentYear = now.getFullYear();
     bbState.currentMonth = now.getMonth();
     
-    await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
-    bbRenderCalendar();
+    bbGoTo(0);
   }
 
   // Setup Event Delegation
@@ -752,8 +1085,13 @@
         const partyInput = document.getElementById('guest-party');
         const partySize = parseInt(partyInput.value, 10);
         
-        if (partySize && (partySize < 1 || partySize > 20)) {
-          errMsg.textContent = 'Party size must be between 1 and 20.';
+        const tourKey = bbState.selectedTour;
+        const maxLimit = tourKey ? (TOURS[tourKey].maxParty || 20) : 20;
+        
+        if (partySize && (partySize < 1 || partySize > maxLimit)) {
+          errMsg.textContent = `Party size must be between 1 and ${maxLimit}.`;
+        } else if (document.getElementById('mines-vehicle-ack') && document.getElementById('mines-vehicle-ack').validity.valueMissing) {
+          errMsg.textContent = 'You must confirm that you will provide a high-clearance, 4-wheel drive vehicle.';
         } else {
           errMsg.textContent = 'Please fill in all required fields.';
         }
@@ -779,8 +1117,11 @@
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endDayStr = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
 
+    const tourKey = bbState.selectedTour;
+    const duration = tourKey ? TOURS[tourKey].duration : 1;
+
     // Construct M365 endpoint URL
-    const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}`;
+    const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}&duration=${duration}`;
 
     try {
       const res = await fetch(url);
@@ -887,7 +1228,16 @@
       const dayDate = new Date(currentYear, currentMonth, d);
 
       const monthName = monthNames[currentMonth];
-      const isUnavailable = (dayDate < today || !bbState.availableDates[dateStr]);
+      let isUnavailable = (dayDate < today || !bbState.availableDates[dateStr]);
+      
+      // Twilight Tour date-filtering check (only June through September)
+      if (bbState.selectedTour === 'twilight') {
+        const m = dayDate.getMonth(); // 0-indexed: 5=June, 6=July, 7=August, 8=September
+        if (m < 5 || m > 8) {
+          isUnavailable = true;
+        }
+      }
+
       const statusText = isUnavailable ? 'unavailable' : 'available';
       btn.setAttribute('aria-label', `${monthName} ${d}, ${currentYear}, ${statusText}`);
 
@@ -951,13 +1301,28 @@
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
     });
 
-    if (!Array.isArray(slots) || slots.length === 0) {
-      grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: 0.95rem;">No guides available on this day.</div>';
+    // Twilight Tour time-filtering (only at 5:00 PM / 17:00)
+    let filteredSlots = slots;
+    if (bbState.selectedTour === 'twilight') {
+      filteredSlots = slots.filter(slot => {
+        const isObject = typeof slot === 'object' && slot !== null;
+        const slotStr = isObject ? slot.time : slot;
+        const { apiTime } = parseSlotKey(slotStr, dateStr);
+        return apiTime === '17:00';
+      });
+    }
+
+    if (!Array.isArray(filteredSlots) || filteredSlots.length === 0) {
+      if (bbState.selectedTour === 'twilight') {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: 0.95rem;">The Twilight Tour can only be booked at 5:00 PM (17:00). No 5:00 PM slot is available on this day.</div>';
+      } else {
+        grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); font-size: 0.95rem;">No guides available on this day.</div>';
+      }
       document.getElementById('bb-to-step-3').disabled = true;
       return;
     }
 
-    const sortedSlots = [...slots].sort((a, b) => {
+    const sortedSlots = [...filteredSlots].sort((a, b) => {
       const timeA = typeof a === 'object' ? a.time : a;
       const timeB = typeof b === 'object' ? b.time : b;
       return timeA.localeCompare(timeB);
@@ -1018,18 +1383,43 @@
       return;
     }
 
-    if (partySize < 1 || partySize > 20) {
-      errMsg.textContent = 'Party size must be between 1 and 20.';
+    const tourKey = bbState.selectedTour;
+    const tour = TOURS[tourKey];
+    const maxLimit = tour ? tour.maxParty : 20;
+    const tourPrice = tour ? tour.price : 25.00;
+    const tourName = tour ? tour.name : 'Guided Tour';
+
+    if (partySize < 1 || partySize > maxLimit) {
+      errMsg.textContent = `Party size must be between 1 and ${maxLimit}.`;
       errBox.style.display = 'flex';
       return;
     }
 
+    if (tourKey === 'mines') {
+      const ackInput = document.getElementById('mines-vehicle-ack');
+      if (ackInput && !ackInput.checked) {
+        errMsg.textContent = 'You must confirm that you will provide a high-clearance, 4-wheel drive vehicle.';
+        errBox.style.display = 'flex';
+        return;
+      }
+    }
+
     bbShowLoading("Reserving slots with ranger...");
+
+    const tourTypeMap = {
+      'private-town': 'private_town_tour',
+      'living-lake': 'living_at_the_lake',
+      'twilight': 'twilight_tour',
+      'large-group': 'large_group_tour',
+      'mines': 'mines_mills_tour'
+    };
 
     const payload = {
       date: bbState.selectedDate,
       time: bbState.selectedTime,
       party_size: partySize,
+      tour_type: tourTypeMap[tourKey] || 'large_group_tour',
+      vehicle_acknowledgment: tourKey === 'mines' ? (document.getElementById('mines-vehicle-ack') ? document.getElementById('mines-vehicle-ack').checked : false) : false,
       guest: { name, email, phone }
     };
 
@@ -1062,7 +1452,8 @@
         const confirmEmail = document.getElementById('bb-confirm-email');
         if (confirmEmail) confirmEmail.textContent = email;
 
-        document.getElementById('bb-amount-display').textContent = `$${(partySize * TOUR_PRICE).toFixed(2)} DUE`;
+        const totalPrice = tour ? tour.calcPrice(partySize) : (partySize * 25.00);
+        document.getElementById('bb-amount-display').textContent = `$${totalPrice.toFixed(2)} DUE`;
         document.getElementById('bb-confirm-id').textContent = result.booking_id;
         document.getElementById('bb-confirm-party').textContent = `${partySize} Guest(s)`;
         
@@ -1070,7 +1461,7 @@
         const displayDate = new Date(bbState.selectedDate + 'T12:00:00').toLocaleDateString('en-US', {
           month: 'short', day: 'numeric', year: 'numeric'
         });
-        document.getElementById('bb-confirm-datetime').textContent = `${displayDate} @ ${timeLabel}`;
+        document.getElementById('bb-confirm-datetime').textContent = `${tourName} on ${displayDate} @ ${timeLabel}`;
         
         bbGoTo(4);
       } else {
@@ -1094,21 +1485,31 @@
     document.querySelectorAll('.bb-step').forEach(pane => pane.classList.remove('active'));
     document.getElementById(`step-pane-${step}`).classList.add('active');
     
-    const progressWidth = ((step - 1) / 3) * 100;
+    const progressWidth = (step / 4) * 100;
     document.getElementById('bb-progress-bar').style.width = `${progressWidth}%`;
     
     document.querySelectorAll('.bb-progress-step').forEach((dot, index) => {
-      if (index + 1 < step) {
+      if (index < step) {
         dot.className = 'bb-progress-step completed';
-      } else if (index + 1 === step) {
+      } else if (index === step) {
         dot.className = 'bb-progress-step active';
       } else {
         dot.className = 'bb-progress-step';
       }
     });
 
+    if (step === 1) {
+      bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth).then(() => {
+        bbRenderCalendar();
+      });
+    }
+
     if (step === 2) {
       bbPopulateSlots();
+    }
+
+    if (step === 3) {
+      bbUpdateStep3Fields();
     }
     
     // Focus the step heading programmatically
@@ -1122,6 +1523,54 @@
       behavior: 'smooth'
     });
   }
+
+  function bbSelectTour(tourKey) {
+    bbState.selectedTour = tourKey;
+    
+    document.querySelectorAll('.bb-tour-card').forEach(card => {
+      if (card.getAttribute('data-tour') === tourKey) {
+        card.classList.add('selected');
+        card.setAttribute('aria-pressed', 'true');
+      } else {
+        card.classList.remove('selected');
+        card.setAttribute('aria-pressed', 'false');
+      }
+    });
+
+    document.getElementById('bb-to-step-1').disabled = false;
+
+    // Reset subsequent selections
+    bbState.selectedDate = null;
+    bbState.selectedTime = null;
+    document.getElementById('bb-to-step-2').disabled = true;
+    document.getElementById('bb-to-step-3').disabled = true;
+  }
+
+  function bbUpdateStep3Fields() {
+    const tourKey = bbState.selectedTour;
+    const tour = TOURS[tourKey];
+    
+    const ackGroup = document.getElementById('mines-vehicle-ack-group');
+    const ackInput = document.getElementById('mines-vehicle-ack');
+    const partyInput = document.getElementById('guest-party');
+    const partyLabel = document.querySelector('label[for="guest-party"]');
+
+    if (tourKey === 'mines') {
+      ackGroup.style.display = 'block';
+      ackInput.required = true;
+    } else {
+      ackGroup.style.display = 'none';
+      ackInput.required = false;
+      ackInput.checked = false;
+    }
+
+    const maxParty = tour ? tour.maxParty : 20;
+    partyInput.max = maxParty;
+    partyInput.placeholder = `e.g. 4 (max ${maxParty})`;
+    partyLabel.textContent = `Party Size * (Max ${maxParty})`;
+  }
+
+  window.bbSelectTour = bbSelectTour;
 
   function bbShowLoading(text) {
     const loading = document.getElementById('bb-loading');

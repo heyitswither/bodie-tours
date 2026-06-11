@@ -6,6 +6,15 @@ This document details the step‑by‑step verification results for the booking 
 
 All five key scenarios have been interactively verified in Chrome via Puppeteer. Visual evidence, console logs, and network traces have been successfully captured and are located in the [screenshots/](file:///home/freya/bodie-tours/screenshots/) directory.
 
+### Responsive Layout & Container Sizing Expansion
+
+To allow the booking widget to seamlessly occupy the full available width of its embedding container (such as custom code block wrappers on Squarespace) without losing its premium, high-end look, we implemented a sophisticated container-query-based responsive styling system:
+
+1. **Max-Width Expansion**: Increased `#bodie-booking-widget`'s maximum width from `580px` to `950px` (`width: 100%`). The widget now dynamically expands to fill larger parent spaces on wide desktop layouts, while scaling gracefully down on mobile.
+2. **2-Column Tour Selector Grid**: Using container queries (`@container booking-widget (min-width: 650px)`), the tour selector `.bb-tour-cards-container` dynamically switches from a single-column layout to a premium **2-column grid** with a `20px` gap and an expanded `580px` max-height limit. This prevents description clipping, maximizes screen real-estate, and prevents layout-shifting.
+3. **Optimized Form Layout (2x2 Grid)**: In wider container configurations, the guest information form (`#bb-booking-form`) shifts to a gorgeous **2-column grid**. Full Name, Email, Phone, and Party Size are paired side-by-side in a responsive 2x2 grid. The conditional 4WD acknowledgement checkbox spans both columns (`grid-column: span 2`).
+4. **Visual Balance Restraints**: Within wide layouts, the calendar grid and header are capped at a maximum width of `580px` and centered with `margin: 0 auto;`. This maintains their readability and prevents day slots from stretching into awkward aspect ratios, while keeping a highly balanced visual presentation.
+
 ### Scenario 1: Happy Path Successful Booking
 - **Status**: Verified Successfully
 - **Description**: Select available date -> select open time slot -> fill out contact details -> submit.
