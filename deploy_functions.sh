@@ -200,4 +200,18 @@ if should_deploy "m365-free-availability"; then
     --set-env-vars LOG_EXECUTION_ID="true" >> "$LOG_FILE" 2>&1
 fi
 
+# 10. cancel-tour
+if should_deploy "cancel-tour"; then
+  echo "Deploying cancel-tour..."
+  gcloud functions deploy cancel-tour \
+    --gen2 \
+    --runtime="$RUNTIME" \
+    --region="$REGION" \
+    --trigger-http \
+    --allow-unauthenticated \
+    --entry-point=cancel_tour \
+    --project="$PROJECT_ID" \
+    --set-env-vars LOG_EXECUTION_ID="true" >> "$LOG_FILE" 2>&1
+fi
+
 echo "=== Selected Cloud Functions Deployed Successfully ==="

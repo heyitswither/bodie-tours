@@ -1,3 +1,8 @@
+<!-- Premium Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+
 <style>
   /* Custom Styling - Premium Historic & Rustic Earth Tones Theme */
   :root {
@@ -149,9 +154,9 @@
   .bb-month-btn {
     background: transparent;
     border: 1px solid var(--border-sand);
-    border-radius: 8px;
-    width: 36px;
-    height: 36px;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -236,9 +241,10 @@
   }
 
   .bb-day.unavailable {
-    color: var(--border-sand);
+    color: #8e8a86; /* Higher contrast for mobile/sunlight legibility while remaining clearly disabled */
     cursor: not-allowed;
     pointer-events: none;
+    opacity: 0.5;
   }
 
   .bb-day.empty {
@@ -532,17 +538,44 @@
     text-align: right;
   }
 
-  /* Mobile Adjustments using Container Queries */
-  @container booking-widget (max-width: 480px) {
+  /* Mobile Adjustments using Viewport Media Queries for the Container itself */
+  @media (max-width: 480px) {
     #bodie-booking-widget {
-      padding: 24px;
-      margin: 20px auto;
+      padding: 16px; /* Reduced from 40px/24px to maximize mobile screen workspace */
+      margin: 10px auto;
+      border-radius: 8px; /* Tighter borders */
     }
+    /* Prevent iOS input zoom on focus */
+    .bb-input {
+      font-size: 16px !important;
+    }
+    /* Month navigation buttons touch targets expansion */
+    .bb-month-btn {
+      width: 48px !important;
+      height: 48px !important;
+    }
+  }
+
+  /* Mobile Adjustments for descendant elements using Container Queries */
+  @container booking-widget (max-width: 480px) {
     .bb-btn-row {
       flex-direction: column-reverse;
     }
     .bb-calendar-grid {
       gap: 2px;
+    }
+    /* Reduce progress indicator spacing on narrow container widths */
+    .bb-progress {
+      margin-bottom: 24px;
+    }
+  }
+
+  /* Further scale down indicator bar on very narrow containers */
+  @container booking-widget (max-width: 360px) {
+    .bb-progress-step {
+      width: 28px;
+      height: 28px;
+      font-size: 0.75rem;
     }
   }
 
@@ -752,15 +785,16 @@
 
 <section id="bodie-booking-widget" aria-label="Bodie Guided Tours Booking Widget">
   <h1 class="sr-only">Bodie Hills Guided Tour Booking</h1>
+  <div id="bb-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
   
   <div id="bb-loading" class="bb-loading-overlay" aria-hidden="true">
     <div class="bb-spinner"></div>
     <div id="bb-loading-text" style="font-weight: 500; color: var(--text-charcoal);">Checking availability...</div>
   </div>
 
-  <div class="bb-progress" aria-label="Booking steps progress">
+  <div class="bb-progress" id="bb-progress-container" role="progressbar" aria-valuemin="1" aria-valuemax="5" aria-valuenow="1" aria-label="Booking steps progress">
     <div id="bb-progress-bar" class="bb-progress-bar"></div>
-    <div class="bb-progress-step active" id="step-dot-0">1</div>
+    <div class="bb-progress-step active" id="step-dot-0" aria-current="step">1</div>
     <div class="bb-progress-step" id="step-dot-1">2</div>
     <div class="bb-progress-step" id="step-dot-2">3</div>
     <div class="bb-progress-step" id="step-dot-3">4</div>
@@ -768,17 +802,17 @@
   </div>
 
   <div class="bb-step active" id="step-pane-0">
-    <h2 id="bb-step-heading-0" tabindex="-1"><span aria-hidden="true">🗺️</span> Select Tour Type</h2>
-    <p>Please choose a guided tour. Each tour offers a unique ranger-led experience exploring the history and architecture of Bodie.</p>
+    <h2 id="bb-step-heading-0" tabindex="-1">Choose Your Guided Tour</h2>
+    <p>Please select one of our premium, ranger-led experiences below to explore the fascinating history and rugged beauty of Bodie.</p>
     
-    <div class="bb-tour-cards-container">
+    <div class="bb-tour-cards-container" role="radiogroup" aria-label="Select Tour Type">
       <!-- Card 1: Private Town Tour of Bodie -->
-      <div class="bb-tour-card" data-tour="private-town" onclick="bbSelectTour('private-town')">
+      <div class="bb-tour-card" data-tour="private-town" role="radio" aria-checked="false" tabindex="0" onclick="bbSelectTour('private-town')" onkeydown="if(event.key===' ' || event.key==='Enter') { event.preventDefault(); bbSelectTour('private-town'); }">
         <div class="bb-tour-card-header">
           <h3 class="bb-tour-title">Private Town Tour of Bodie</h3>
           <span class="bb-tour-duration">2 hrs</span>
         </div>
-        <p class="bb-tour-desc">A private walking tour through the historic streets of Bodie ghost town, tailored to your group's interests with exclusive historical stories.</p>
+        <p class="bb-tour-desc">Enjoy a personalized walking tour through the historic streets of Bodie Ghost Town. Our expert guides will tailor the journey to your group's interests with exclusive historical stories.</p>
         <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/person extra)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">Walking Tour</span>
@@ -787,12 +821,12 @@
       </div>
       
       <!-- Card 2: Living at the Lake Tour -->
-      <div class="bb-tour-card" data-tour="living-lake" onclick="bbSelectTour('living-lake')">
+      <div class="bb-tour-card" data-tour="living-lake" role="radio" aria-checked="false" tabindex="0" onclick="bbSelectTour('living-lake')" onkeydown="if(event.key===' ' || event.key==='Enter') { event.preventDefault(); bbSelectTour('living-lake'); }">
         <div class="bb-tour-card-header">
           <h3 class="bb-tour-title">Living at the Lake Tour</h3>
           <span class="bb-tour-duration">2 hrs</span>
         </div>
-        <p class="bb-tour-desc">Explore the unique geology and ecology of the Mono Lake Tufa State Natural Reserve. Walk among the mysterious limestone tufa towers.</p>
+        <p class="bb-tour-desc">Explore the unique geology and scenic ecology of Mono Lake Tufa State Natural Reserve. Walk among the mysterious, towering limestone tufa formations.</p>
         <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/person extra)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">Walking Tour</span>
@@ -801,12 +835,12 @@
       </div>
       
       <!-- Card 3: Bodie Twilight Tours -->
-      <div class="bb-tour-card" data-tour="twilight" onclick="bbSelectTour('twilight')">
+      <div class="bb-tour-card" data-tour="twilight" role="radio" aria-checked="false" tabindex="0" onclick="bbSelectTour('twilight')" onkeydown="if(event.key===' ' || event.key==='Enter') { event.preventDefault(); bbSelectTour('twilight'); }">
         <div class="bb-tour-card-header">
           <h3 class="bb-tour-title">Bodie Twilight Tours</h3>
           <span class="bb-tour-duration">2 hrs</span>
         </div>
-        <p class="bb-tour-desc">Experience Bodie ghost town after hours as day transitions to night. Eerie stories of gold miners, legends, and unexplained events.</p>
+        <p class="bb-tour-desc">Experience Bodie Ghost Town after hours as twilight sets in. Hear captivating stories of gold miners, local legends, and historic mysteries.</p>
         <div class="bb-tour-price">$300.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$60/person extra)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">June–Sept Only</span>
@@ -815,12 +849,12 @@
       </div>
       
       <!-- Card 4: Bus Company / Large Group Tours -->
-      <div class="bb-tour-card" data-tour="large-group" onclick="bbSelectTour('large-group')">
+      <div class="bb-tour-card" data-tour="large-group" role="radio" aria-checked="false" tabindex="0" onclick="bbSelectTour('large-group')" onkeydown="if(event.key===' ' || event.key==='Enter') { event.preventDefault(); bbSelectTour('large-group'); }">
         <div class="bb-tour-card-header">
           <h3 class="bb-tour-title">Bus Company / Large Group Tours</h3>
           <span class="bb-tour-duration">1 hr</span>
         </div>
-        <p class="bb-tour-desc">A structured 1-hour walking tour designed for bus companies, schools, and large groups seeking a comprehensive historical overview.</p>
+        <p class="bb-tour-desc">A structured 1-hour walking tour designed for travel agencies, bus companies, schools, and private groups seeking a comprehensive historical overview.</p>
         <div class="bb-tour-price">$25.00 <span class="bb-tour-price-unit">per person</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">Large Group</span>
@@ -829,12 +863,12 @@
       </div>
       
       <!-- Card 5: Mines, Mills, Rails and Ruins Tour -->
-      <div class="bb-tour-card" data-tour="mines" onclick="bbSelectTour('mines')">
+      <div class="bb-tour-card" data-tour="mines" role="radio" aria-checked="false" tabindex="0" onclick="bbSelectTour('mines')" onkeydown="if(event.key===' ' || event.key==='Enter') { event.preventDefault(); bbSelectTour('mines'); }">
         <div class="bb-tour-card-header">
           <h3 class="bb-tour-title">Mines, Mills, Rails and Ruins Tour</h3>
           <span class="bb-tour-duration">3 hrs</span>
         </div>
-        <p class="bb-tour-desc">Rugged driving tour through the Bodie Mining District. High-clearance, 4WD vehicle required (provided by participants). No interior mine access.</p>
+        <p class="bb-tour-desc">A rugged driving adventure through the historic Bodie Mining District. Participants must provide their own high-clearance 4WD vehicle. Note: there is no interior mine access.</p>
         <div class="bb-tour-price">$100.00 <span class="bb-tour-price-unit">per person ($400 minimum)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">4WD Vehicle Required</span>
@@ -844,13 +878,13 @@
     </div>
     
     <div class="bb-btn-row">
-      <button class="bb-btn bb-btn-primary" id="bb-to-step-1" disabled onclick="bbGoTo(1)">Select Tour Date <span aria-hidden="true">→</span></button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-1" disabled onclick="bbGoTo(1)">Choose Your Tour Date <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-1">
-    <h2 id="bb-step-heading-1" tabindex="-1"><span aria-hidden="true">🏔</span> Select Tour Date</h2>
-    <p>Please choose a date from the calendar. Highlighted dates have open tour guide availability blocks scheduled by the Park Ranger.</p>
+    <h2 id="bb-step-heading-1" tabindex="-1">Choose a Date</h2>
+    <p>Please select a date from the calendar. Dates highlighted with a green dot are available for booking.</p>
     
     <div class="bb-calendar-header">
       <button class="bb-month-btn" onclick="bbChangeMonth(-1)" aria-label="Previous month"><span aria-hidden="true">‹</span></button>
@@ -858,55 +892,55 @@
       <button class="bb-month-btn" onclick="bbChangeMonth(1)" aria-label="Next month"><span aria-hidden="true">›</span></button>
     </div>
 
-    <div class="bb-calendar-grid" id="bb-calendar-grid">
+    <div class="bb-calendar-grid" id="bb-calendar-grid" role="grid" aria-label="Tour Date Selection">
       </div>
     
     <div class="bb-btn-row">
       <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(0)"><span aria-hidden="true">←</span> Change Tour</button>
-      <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Select Time Slot <span aria-hidden="true">→</span></button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-2" disabled onclick="bbGoTo(2)">Choose Your Time Slot <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-2">
-    <h2 id="bb-step-heading-2" tabindex="-1"><span aria-hidden="true">⏰</span> Select Time</h2>
-    <p>Choose an available time slot for <strong id="bb-selected-date-display"></strong>. The park enforces a one-group-per-slot policy.</p>
+    <h2 id="bb-step-heading-2" tabindex="-1">Choose a Time</h2>
+    <p>Select an available start time for your tour on <strong id="bb-selected-date-display"></strong>. Each time slot is reserved exclusively for your group.</p>
     
     <div class="bb-slots-grid" id="bb-slots-grid">
       </div>
 
     <div class="bb-btn-row">
       <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(1)"><span aria-hidden="true">←</span> Change Date</button>
-      <button class="bb-btn bb-btn-primary" id="bb-to-step-3" disabled onclick="bbGoTo(3)">Guest Details <span aria-hidden="true">→</span></button>
+      <button class="bb-btn bb-btn-primary" id="bb-to-step-3" disabled onclick="bbGoTo(3)">Continue to Your Details <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-3">
-    <h2 id="bb-step-heading-3" tabindex="-1"><span aria-hidden="true">👤</span> Guest Information</h2>
-    <p>Provide details to secure your state park booking reservation. Double-booking holds are applied atomically.</p>
+    <h2 id="bb-step-heading-3" tabindex="-1">Your Contact Information</h2>
+    <p>Please provide your contact details below to hold your reservation. We will secure your slot while you complete your payment.</p>
 
     <div id="bb-error-box" class="bb-info-box error" style="display: none;" role="alert">
       <span class="bb-info-box-icon" aria-hidden="true">⚠️</span>
-      <span id="bb-error-message">Please fill in all required fields.</span>
+      <span id="bb-error-message">Please fill out all required fields correctly before continuing.</span>
     </div>
 
     <form id="bb-booking-form" onsubmit="event.preventDefault(); bbSubmitBooking();">
       <div class="bb-form-group">
-        <label class="bb-label" for="guest-name">Full Name *</label>
-        <input class="bb-input" id="guest-name" required placeholder="Jane Doe" type="text" autocomplete="name">
+        <label class="bb-label" for="guest-name">Full Name (Required)</label>
+        <input class="bb-input" id="guest-name" required placeholder="e.g., Jane Doe" type="text" autocomplete="name">
       </div>
 
       <div class="bb-form-group">
-        <label class="bb-label" for="guest-email">Email Address *</label>
-        <input class="bb-input" id="guest-email" required placeholder="jane.doe@example.com" type="email" autocomplete="email">
+        <label class="bb-label" for="guest-email">Email Address (Required)</label>
+        <input class="bb-input" id="guest-email" required placeholder="e.g., jane.doe@example.com" type="email" autocomplete="email" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address, e.g., jane.doe@example.com">
       </div>
 
       <div class="bb-form-group">
-        <label class="bb-label" for="guest-phone">Phone Number *</label>
-        <input class="bb-input" id="guest-phone" required placeholder="555-0199" type="tel" autocomplete="tel">
+        <label class="bb-label" for="guest-phone">Phone Number (Required)</label>
+        <input class="bb-input" id="guest-phone" required placeholder="e.g., (555) 555-0199" type="tel" autocomplete="tel" pattern="\(\d{3}\) \d{3}-\d{4}" title="Please enter a valid 10-digit phone number in the format (555) 555-5555">
       </div>
 
       <div class="bb-form-group">
-        <label class="bb-label" for="guest-party">Party Size * (Max 20)</label>
+        <label class="bb-label" for="guest-party">Number of Guests (Required)</label>
         <input class="bb-input" id="guest-party" required placeholder="4" type="number" min="1" max="20">
       </div>
 
@@ -914,31 +948,31 @@
       <div class="bb-form-group" id="mines-vehicle-ack-group" style="display: none;">
         <label class="bb-label" style="display: flex; align-items: flex-start; gap: 10px; text-transform: none; font-weight: normal; cursor: pointer; line-height: 1.4;">
           <input type="checkbox" id="mines-vehicle-ack" style="margin-top: 3px; cursor: pointer; width: 16px; height: 16px; accent-color: var(--accent-copper);">
-          <span>I confirm that I will provide a high-clearance, 4-wheel drive vehicle *</span>
+          <span>I confirm that our group will provide our own high-clearance, 4-wheel drive vehicle (Required)</span>
         </label>
       </div>
     </form>
-
+    
     <div class="bb-btn-row">
       <button class="bb-btn bb-btn-secondary" onclick="bbGoTo(2)"><span aria-hidden="true">←</span> Change Time</button>
-      <button class="bb-btn bb-btn-primary" id="bb-confirm-booking-btn" type="submit" form="bb-booking-form">Confirm Booking Hold <span aria-hidden="true">→</span></button>
+      <button class="bb-btn bb-btn-primary" id="bb-confirm-booking-btn" type="submit" form="bb-booking-form">Hold My Spot <span aria-hidden="true">→</span></button>
     </div>
   </div>
 
   <div class="bb-step" id="step-pane-4">
     <div class="bb-confirmation">
       <div class="bb-success-icon">✓</div>
-      <h2 id="bb-step-heading-4" tabindex="-1">Booking Hold Secured!</h2>
-      <p>We have placed your guided tour reservation on hold. To finalize your booking and prevent automatic release, please complete the secure payment link sent to your email.</p>
+      <h2 id="bb-step-heading-4" tabindex="-1">Your Spot is Held!</h2>
+      <p>We have temporarily reserved your tour! To finalize your booking and prevent your spot from being released, please complete the secure payment link sent to your email.</p>
 
       <div class="bb-payment-card">
         <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; color: var(--accent-copper);">
           <span style="font-size: 1.3rem;">✉️</span>
-          <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Check Your Email Inbox</span>
+          <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Check Your Email</span>
         </div>
         <h3 style="margin: 0 0 16px 0; font-size: 1.5rem; text-align: center;" id="bb-amount-display">$0.00 DUE</h3>
         <p style="font-size: 0.95rem; text-align: center; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
-          A secure QuickBooks Online payment invoice has been sent directly to <strong id="bb-confirm-email">your email</strong>. Please check your inbox (and spam/promotions folder) and click the <strong>"Pay Now"</strong> button inside that email to complete payment instantly via credit card.
+          A secure QuickBooks payment invoice has been sent directly to <strong id="bb-confirm-email">your email</strong>. Please open the email and click the <strong>"Pay Now"</strong> button inside to complete your booking. If you do not see it, please check your spam or promotions folder.
         </p>
 
         <div class="bb-payment-meta">
@@ -948,14 +982,27 @@
           <span class="bb-meta-label">Reserved Tour</span>
           <span class="bb-meta-val" id="bb-confirm-datetime">--</span>
 
-          <span class="bb-meta-label">Party Size</span>
+          <span class="bb-meta-label">Number of Guests</span>
           <span class="bb-meta-val" id="bb-confirm-party">--</span>
         </div>
+
+        <div style="text-align: center; margin-top: 24px;">
+          <a class="bb-btn bb-btn-primary" id="bb-invoice-link" href="#" target="_blank" style="text-decoration: none; display: none; align-items: center; justify-content: center; width: 100%; box-sizing: border-box; padding: 12px 24px; font-weight: 600; font-size: 1rem; border-radius: 8px;">
+            💳 Pay Your Invoice Now <span aria-hidden="true" style="margin-left: 8px;">→</span>
+          </a>
+          <p id="bb-redirect-countdown" style="margin: 12px 0 0 0; font-size: 0.85rem; color: var(--accent-copper); font-weight: 500; min-height: 1.2rem;"></p>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 15px; margin-bottom: 20px;">
+        <a id="bb-cancel-link" href="#" target="_blank" style="color: var(--accent-copper); font-size: 0.9rem; text-decoration: underline; font-weight: 500;">
+          ❌ Cancel this reservation hold
+        </a>
       </div>
 
       <div class="bb-info-box info">
         <span class="bb-info-box-icon">ℹ️</span>
-        <span>Your booking is held! Please check your email and complete your payment shortly to secure your spot, as unpaid reservations are automatically released to open slots for other visitors.</span>
+        <span>Your spot is temporarily held! Please complete your payment shortly to secure your booking. Unpaid holds are automatically released after 48 hours to open up the slot for other visitors.</span>
       </div>
     </div>
   </div>
@@ -1077,6 +1124,61 @@
       slotsGrid.dataset.listenerAttached = 'true';
     }
 
+    const phoneInput = document.getElementById('guest-phone');
+    if (phoneInput && !phoneInput.dataset.listenerAttached) {
+      phoneInput.addEventListener('input', function(e) {
+        let cursorPosition = this.selectionStart;
+        let originalLen = this.value.length;
+
+        let rawDigits = this.value.replace(/\D/g, '');
+        
+        // If it starts with 1 and length > 10, assume country code and strip it
+        if (rawDigits.startsWith('1') && rawDigits.length > 10) {
+          rawDigits = rawDigits.slice(1);
+        }
+        
+        const limitedDigits = rawDigits.slice(0, 10);
+        
+        let formatted = '';
+        if (limitedDigits.length > 0) {
+          if (limitedDigits.length <= 3) {
+            formatted = `(${limitedDigits}`;
+          } else if (limitedDigits.length <= 6) {
+            formatted = `(${limitedDigits.slice(0, 3)}) ${limitedDigits.slice(3)}`;
+          } else {
+            formatted = `(${limitedDigits.slice(0, 3)}) ${limitedDigits.slice(3, 6)}-${limitedDigits.slice(6)}`;
+          }
+        }
+        
+        this.value = formatted;
+
+        // Restore cursor position
+        if (cursorPosition < originalLen) {
+          const diff = formatted.length - originalLen;
+          const targetPos = Math.max(0, cursorPosition + diff);
+          this.setSelectionRange(targetPos, targetPos);
+        }
+      });
+      phoneInput.dataset.listenerAttached = 'true';
+    }
+
+    // Sync aria-invalid with the CSS :user-invalid state for all input fields
+    const syncAria = (el) => {
+      if (el && el.setAttribute) {
+        el.setAttribute('aria-invalid', el.matches(':user-invalid') ? 'true' : 'false');
+      }
+    };
+    
+    // Listen for blur and input to sync aria-invalid
+    document.addEventListener('blur', (e) => {
+      if (e.target.matches('.bb-input')) syncAria(e.target);
+    }, true);
+    document.addEventListener('input', (e) => {
+      if (e.target.matches('.bb-input') && e.target.hasAttribute('aria-invalid')) {
+        syncAria(e.target);
+      }
+    });
+
     const form = document.getElementById('bb-booking-form');
     if (form && !form.dataset.listenerAttached) {
       form.addEventListener('invalid', function(event) {
@@ -1088,12 +1190,22 @@
         const tourKey = bbState.selectedTour;
         const maxLimit = tourKey ? (TOURS[tourKey].maxParty || 20) : 20;
         
+        const phoneField = document.getElementById('guest-phone');
+        const emailField = document.getElementById('guest-email');
+        const nameField = document.getElementById('guest-name');
+
         if (partySize && (partySize < 1 || partySize > maxLimit)) {
-          errMsg.textContent = `Party size must be between 1 and ${maxLimit}.`;
+          errMsg.textContent = `The number of guests must be between 1 and ${maxLimit}.`;
         } else if (document.getElementById('mines-vehicle-ack') && document.getElementById('mines-vehicle-ack').validity.valueMissing) {
-          errMsg.textContent = 'You must confirm that you will provide a high-clearance, 4-wheel drive vehicle.';
+          errMsg.textContent = 'Please confirm that your group will provide a high-clearance, 4-wheel drive vehicle.';
+        } else if (phoneField && (phoneField.validity.patternMismatch || phoneField.validity.valueMissing || phoneField.value.replace(/\D/g, '').length !== 10)) {
+          errMsg.textContent = 'Please enter a valid 10-digit phone number, e.g., (555) 555-5555.';
+        } else if (emailField && (emailField.validity.typeMismatch || emailField.validity.patternMismatch || emailField.validity.valueMissing)) {
+          errMsg.textContent = 'Please enter a valid email address, e.g., jane.doe@example.com.';
+        } else if (nameField && nameField.validity.valueMissing) {
+          errMsg.textContent = 'Name is required.';
         } else {
-          errMsg.textContent = 'Please fill in all required fields.';
+          errMsg.textContent = 'Please fill out all required fields correctly before continuing.';
         }
         errBox.style.display = 'flex';
       }, true);
@@ -1106,6 +1218,10 @@
     if (bbState.redirectTimeout) {
       clearTimeout(bbState.redirectTimeout);
       bbState.redirectTimeout = null;
+    }
+    if (bbState.redirectInterval) {
+      clearInterval(bbState.redirectInterval);
+      bbState.redirectInterval = null;
     }
   }
 
@@ -1200,22 +1316,32 @@
     const grid = document.getElementById('bb-calendar-grid');
     grid.innerHTML = '';
 
+    // Create the header row
+    const headerRow = document.createElement('div');
+    headerRow.setAttribute('role', 'row');
+    headerRow.style.display = 'contents';
+
     ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
       const el = document.createElement('div');
       el.className = 'bb-weekday-header';
+      el.setAttribute('role', 'columnheader');
       el.textContent = d;
-      grid.appendChild(el);
+      headerRow.appendChild(el);
     });
+    grid.appendChild(headerRow);
 
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const cells = [];
+
     for (let i = 0; i < firstDay; i++) {
       const blank = document.createElement('div');
       blank.className = 'bb-day empty';
-      grid.appendChild(blank);
+      blank.setAttribute('role', 'gridcell');
+      cells.push(blank);
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -1223,6 +1349,7 @@
       btn.className = 'bb-day';
       btn.textContent = d;
       btn.setAttribute('type', 'button');
+      btn.setAttribute('role', 'gridcell');
       
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayDate = new Date(currentYear, currentMonth, d);
@@ -1232,7 +1359,6 @@
       oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
       let isUnavailable = (dayDate < oneWeekFromNow || !bbState.availableDates[dateStr]);
 
-      
       // Twilight Tour date-filtering check (only June through September)
       if (bbState.selectedTour === 'twilight') {
         const m = dayDate.getMonth(); // 0-indexed: 5=June, 6=July, 7=August, 8=September
@@ -1247,8 +1373,11 @@
       if (isUnavailable) {
         btn.classList.add('unavailable');
         btn.setAttribute('aria-disabled', 'true');
+        btn.setAttribute('disabled', 'true');
+        btn.setAttribute('tabindex', '-1');
       } else {
         btn.classList.add('available');
+        btn.setAttribute('tabindex', '0');
       }
       
       btn.setAttribute('data-date', dateStr);
@@ -1260,7 +1389,22 @@
         btn.setAttribute('aria-pressed', 'false');
       }
       
-      grid.appendChild(btn);
+      cells.push(btn);
+    }
+
+    // Group cells into week rows (7 cells per row)
+    const numCells = cells.length;
+    for (let i = 0; i < numCells; i += 7) {
+      const row = document.createElement('div');
+      row.setAttribute('role', 'row');
+      row.style.display = 'contents';
+      
+      for (let j = 0; j < 7; j++) {
+        if (i + j < numCells) {
+          row.appendChild(cells[i + j]);
+        }
+      }
+      grid.appendChild(row);
     }
   }
 
@@ -1386,6 +1530,20 @@
       return;
     }
 
+    const cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      errMsg.textContent = 'Please enter a valid 10-digit phone number, e.g., (555) 555-5555.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailPattern.test(email)) {
+      errMsg.textContent = 'Please enter a valid email address, e.g., jane.doe@example.com.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
     const tourKey = bbState.selectedTour;
     const tour = TOURS[tourKey];
     const maxLimit = tour ? tour.maxParty : 20;
@@ -1466,6 +1624,47 @@
         });
         document.getElementById('bb-confirm-datetime').textContent = `${tourName} on ${displayDate} @ ${timeLabel}`;
         
+        // Populate and display the invoice payment link
+        const invoiceLink = document.getElementById('bb-invoice-link');
+        const countdownEl = document.getElementById('bb-redirect-countdown');
+        if (invoiceLink && result.payment_link) {
+          invoiceLink.href = result.payment_link;
+          invoiceLink.style.display = 'inline-flex';
+        }
+
+        // Populate cancellation link
+        const cancelLink = document.getElementById('bb-cancel-link');
+        if (cancelLink) {
+          const cancelUrl = `https://us-west2-bodie-tours-prod.cloudfunctions.net/cancel-tour?booking_id=${result.booking_id}&token=${result.token}`;
+          cancelLink.href = cancelUrl;
+        }
+
+        // Automatic redirect/open in new tab after 5 seconds with countdown timer
+        if (result.payment_link) {
+          let count = 5;
+          if (countdownEl) {
+            countdownEl.textContent = `Opening secure payment window in ${count} seconds...`;
+          }
+          
+          bbState.redirectInterval = setInterval(() => {
+            count--;
+            if (countdownEl) {
+              if (count > 0) {
+                countdownEl.textContent = `Opening secure payment window in ${count} seconds...`;
+              } else {
+                countdownEl.textContent = "Opening now...";
+                clearInterval(bbState.redirectInterval);
+                bbState.redirectInterval = null;
+              }
+            }
+          }, 1000);
+
+          bbState.redirectTimeout = setTimeout(() => {
+            window.open(result.payment_link, '_blank');
+            bbState.redirectTimeout = null;
+          }, 5000);
+        }
+
         bbGoTo(4);
       } else {
         errMsg.textContent = result.message || 'The slot is no longer available. Please select another time.';
@@ -1480,6 +1679,16 @@
     }
   }
 
+  function bbAnnounce(message) {
+    const announcer = document.getElementById('bb-announcer');
+    if (announcer) {
+      announcer.textContent = '';
+      setTimeout(() => {
+        announcer.textContent = message;
+      }, 50);
+    }
+  }
+
   function bbGoTo(step) {
     if (step < 4) {
       bbClearTimers();
@@ -1491,13 +1700,21 @@
     const progressWidth = (step / 4) * 100;
     document.getElementById('bb-progress-bar').style.width = `${progressWidth}%`;
     
+    const progressContainer = document.getElementById('bb-progress-container');
+    if (progressContainer) {
+      progressContainer.setAttribute('aria-valuenow', step + 1);
+    }
+    
     document.querySelectorAll('.bb-progress-step').forEach((dot, index) => {
       if (index < step) {
         dot.className = 'bb-progress-step completed';
+        dot.removeAttribute('aria-current');
       } else if (index === step) {
         dot.className = 'bb-progress-step active';
+        dot.setAttribute('aria-current', 'step');
       } else {
         dot.className = 'bb-progress-step';
+        dot.removeAttribute('aria-current');
       }
     });
 
@@ -1519,6 +1736,8 @@
     const heading = document.getElementById(`bb-step-heading-${step}`);
     if (heading) {
       heading.focus({ preventScroll: true });
+      const cleanText = heading.textContent.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
+      bbAnnounce(`Step ${step + 1} of 5: ${cleanText}`);
     }
 
     window.scrollTo({
@@ -1531,11 +1750,14 @@
     bbState.selectedTour = tourKey;
     
     document.querySelectorAll('.bb-tour-card').forEach(card => {
-      if (card.getAttribute('data-tour') === tourKey) {
+      const isSelected = card.getAttribute('data-tour') === tourKey;
+      if (isSelected) {
         card.classList.add('selected');
+        card.setAttribute('aria-checked', 'true');
         card.setAttribute('aria-pressed', 'true');
       } else {
         card.classList.remove('selected');
+        card.setAttribute('aria-checked', 'false');
         card.setAttribute('aria-pressed', 'false');
       }
     });
@@ -1569,8 +1791,8 @@
 
     const maxParty = tour ? tour.maxParty : 20;
     partyInput.max = maxParty;
-    partyInput.placeholder = `e.g. 4 (max ${maxParty})`;
-    partyLabel.textContent = `Party Size * (Max ${maxParty})`;
+    partyInput.placeholder = `e.g., 4 (maximum ${maxParty})`;
+    partyLabel.textContent = `Number of Guests (Required, max ${maxParty})`;
   }
 
   window.bbSelectTour = bbSelectTour;

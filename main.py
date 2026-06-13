@@ -267,12 +267,19 @@ def check_m365_availability(
             "free",
             "tentative",
         ):
-            ev_start = _safe_fromisoformat(event["start"]["dateTime"]).replace(
-                tzinfo=_get_zoneinfo(event["start"].get("timeZone"))
-            )
-            ev_end = _safe_fromisoformat(event["end"]["dateTime"]).replace(
-                tzinfo=_get_zoneinfo(event["end"].get("timeZone"))
-            )
+            ev_start = _safe_fromisoformat(event["start"]["dateTime"])
+            tz_start = _get_zoneinfo(event["start"].get("timeZone"))
+            if ev_start.tzinfo is not None:
+                ev_start = ev_start.astimezone(tz_start)
+            else:
+                ev_start = ev_start.replace(tzinfo=tz_start)
+
+            ev_end = _safe_fromisoformat(event["end"]["dateTime"])
+            tz_end = _get_zoneinfo(event["end"].get("timeZone"))
+            if ev_end.tzinfo is not None:
+                ev_end = ev_end.astimezone(tz_end)
+            else:
+                ev_end = ev_end.replace(tzinfo=tz_end)
             if ev_start <= start_dt and ev_end >= end_dt:
                 return True
 
@@ -2303,6 +2310,9 @@ def m365_free_availability(request):
                 start_date = min_allowed_date
 
 
+        if start_date > end_date:
+            return ({"dates": {}}, 200, headers)
+
         local_tz = ZoneInfo("America/Los_Angeles")
         # Build start/end ISO strings for the entire start/end date range in Pacific time
         range_start = datetime.combine(start_date, datetime.min.time()).replace(
@@ -2346,12 +2356,19 @@ def m365_free_availability(request):
                 "tentative",
             ):
                 try:
-                    ev_start = _safe_fromisoformat(ev["start"]["dateTime"]).replace(
-                        tzinfo=_get_zoneinfo(ev["start"].get("timeZone", "UTC"))
-                    )
-                    ev_end = _safe_fromisoformat(ev["end"]["dateTime"]).replace(
-                        tzinfo=_get_zoneinfo(ev["end"].get("timeZone", "UTC"))
-                    )
+                    ev_start = _safe_fromisoformat(ev["start"]["dateTime"])
+                    tz_start = _get_zoneinfo(ev["start"].get("timeZone", "UTC"))
+                    if ev_start.tzinfo is not None:
+                        ev_start = ev_start.astimezone(tz_start)
+                    else:
+                        ev_start = ev_start.replace(tzinfo=tz_start)
+
+                    ev_end = _safe_fromisoformat(ev["end"]["dateTime"])
+                    tz_end = _get_zoneinfo(ev["end"].get("timeZone", "UTC"))
+                    if ev_end.tzinfo is not None:
+                        ev_end = ev_end.astimezone(tz_end)
+                    else:
+                        ev_end = ev_end.replace(tzinfo=tz_end)
 
                     ev_start_local = ev_start.astimezone(local_tz)
                     ev_end_local = ev_end.astimezone(local_tz)

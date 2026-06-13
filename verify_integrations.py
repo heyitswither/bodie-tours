@@ -1195,6 +1195,33 @@ def test_successful_booking(db):
                 f"Integration IDs (invoice: {qbo_invoice_id} or event: {m365_event_id}) missing in booking document."
             )
         print_pass(f"Invoice ({qbo_invoice_id}) and M365 event ID ({m365_event_id}) successfully verified.")
+
+        # 5. Retrieve token and test cancel-tour integration
+        token = result.get("token")
+        if not token:
+            raise Exception("Token missing in successful booking response.")
+
+        cancel_url = f"https://us-west2-bodie-tours-prod.cloudfunctions.net/cancel-tour?booking_id={booking_id}&token={token}"
+        print_info(f"Calling cancel-tour endpoint: {cancel_url}...")
+        cancel_res = requests.get(cancel_url, timeout=20)
+        if not cancel_res.ok:
+            raise Exception(
+                f"Cancellation request failed with status {cancel_res.status_code}: {cancel_res.text}"
+            )
+        cancel_result = cancel_res.json()
+        if cancel_result.get("status") != "success":
+            raise Exception(f"Cancellation API returned error: {cancel_result}")
+
+        print_pass("cancel-tour API returned successful response.")
+
+        # Verify document payment_status is updated to "CANCELLED_BY_GUEST"
+        booking_doc = db.collection("bookings").document(booking_id).get()
+        booking_data = booking_doc.to_dict() or {}
+        if booking_data.get("payment_status") != "CANCELLED_BY_GUEST":
+            raise Exception(
+                f"Booking payment_status is '{booking_data.get('payment_status')}', expected 'CANCELLED_BY_GUEST'"
+            )
+        print_pass("Booking payment_status successfully verified as CANCELLED_BY_GUEST.")
         return True
 
     except Exception as e:
@@ -1244,6 +1271,27 @@ def test_successful_booking(db):
             print_warn(f"Error deleting Firestore public document: {e}")
 
 
+def test_cancel_tour_validation():
+    """Verify cancel-tour endpoint validates request inputs and authentication correctly."""
+    print_info("Running cancel-tour Validation Test...")
+    base_url = "https://us-west2-bodie-tours-prod.cloudfunctions.net/cancel-tour"
+
+    # 1. Missing booking_id/token
+    res = requests.get(base_url, timeout=10)
+    if res.status_code != 400:
+        print_fail(f"Expected 400 Bad Request for missing params, got {res.status_code}")
+        return False
+    print_pass("Correctly returned 400 Bad Request for missing parameters.")
+
+    # 2. Invalid booking_id/token
+    res = requests.get(f"{base_url}?booking_id=nonexistent_id&token=invalid_token", timeout=10)
+    if res.status_code != 404:
+        print_fail(f"Expected 404 Not Found for nonexistent booking, got {res.status_code}")
+        return False
+    print_pass("Correctly returned 404 Not Found for nonexistent booking ID.")
+    return True
+
+
 def main():
     # Initialize Firestore Client
     try:
@@ -1260,6 +1308,7 @@ def main():
         ("Live Booking Endpoint CORS/Validation", test_booking_function),
         ("Live Pruning Cloud Scheduler Auth", test_pruning_function),
         ("Live Retry Cloud Scheduler Auth", test_retry_unpaid_function),
+        ("Live cancel-tour Endpoint Parameter Validation", test_cancel_tour_validation),
         ("M365 Availability and Filtering Flow", lambda: test_m365_availability_and_filtering(db)),
         ("Live Booking Double-Booking Conflict Detection", lambda: test_handle_booking_conflict(db)),
         ("Live Pruning Scheduled Maintenance Execution", lambda: test_live_pruning_workflow(db)),

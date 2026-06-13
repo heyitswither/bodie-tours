@@ -94,7 +94,7 @@ const path = require('path');
     // Fill form
     await page.type('#guest-name', 'Jane Doe');
     await page.type('#guest-email', 'jane.doe@example.com');
-    await page.type('#guest-phone', '555-1234');
+    await page.type('#guest-phone', '555-555-1234');
     await page.type('#guest-party', '4');
 
     // Submit
@@ -187,7 +187,7 @@ const path = require('path');
     // Fill invalid data: invalid email, party size 21
     await page.type('#guest-name', 'Jane Doe');
     await page.type('#guest-email', 'invalidemail');
-    await page.type('#guest-phone', '555-1234');
+    await page.type('#guest-phone', '555-555-1234');
     await page.type('#guest-party', '25');
 
     // Submit to trigger validation
@@ -230,7 +230,7 @@ const path = require('path');
     // Fill form with name that triggers a Conflict Error (409)
     await page.type('#guest-name', 'Conflict Error');
     await page.type('#guest-email', 'conflict@example.com');
-    await page.type('#guest-phone', '555-1234');
+    await page.type('#guest-phone', '555-555-1234');
     await page.type('#guest-party', '2');
 
     // Submit
