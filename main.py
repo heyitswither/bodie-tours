@@ -4,6 +4,7 @@ import requests
 import requests_retry
 import os
 import base64
+import uuid
 import secrets
 import hmac
 import hashlib
@@ -339,6 +340,30 @@ def inject_m365_event(
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
+    if booking_id:
+        event_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-calendar-event-{booking_id}")
+        headers["client-request-id"] = str(event_uuid)
+
+        # Pre-creation check: see if calendar event already exists
+        try:
+            filter_str = f"start/dateTime eq '{start_dt.strftime('%Y-%m-%dT%H:%M:%S')}'"
+            check_response = requests.get(
+                url,
+                headers=headers,
+                params={"$filter": filter_str},
+                timeout=10
+            )
+            if check_response.status_code == 200:
+                events = check_response.json().get("value", [])
+                for event in events:
+                    body_content = event.get("body", {}).get("content", "")
+                    subject = event.get("subject", "")
+                    if booking_id in body_content or booking_id in subject:
+                        found_id = event.get("id")
+                        logging.info(f"M365 calendar event already exists for booking {booking_id}. Returning existing event ID '{found_id}'.")
+                        return found_id
+        except Exception as e:
+            logging.warning(f"Error checking for pre-existing M365 calendar event: {e}")
 
     response = requests.post(url, headers=headers, json=event_payload, timeout=10)
     if response.status_code not in (200, 201):
@@ -486,6 +511,9 @@ def send_booking_receipt_email(booking_id, data):
         "Authorization": f"Bearer {m365_token}",
         "Content-Type": "application/json",
     }
+    if booking_id:
+        email_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-receipt-email-{booking_id}")
+        headers["client-request-id"] = str(email_uuid)
     message = {
         "message": {
             "subject": subject,
@@ -643,6 +671,9 @@ def send_m365_invoice_email(booking_id, customer_email, payment_link, total_amou
         "Authorization": f"Bearer {m365_token}",
         "Content-Type": "application/json",
     }
+    if booking_id:
+        email_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-invoice-email-{booking_id}")
+        headers["client-request-id"] = str(email_uuid)
     message = {
         "message": {
             "subject": subject,
@@ -809,7 +840,7 @@ def get_qbo_access_token(force=False):
     return new_access_token, realm_id
 
 
-def resolve_or_create_qbo_customer(access_token, realm_id, guest_data):
+def resolve_or_create_qbo_customer(access_token, realm_id, guest_data, booking_id=None):
     """
     Finds a QBO Customer by email or creates a new one if not found.
     Falls back gracefully to "1" on any error or mock/dummy mode.
@@ -903,6 +934,10 @@ def resolve_or_create_qbo_customer(access_token, realm_id, guest_data):
         }
 
         create_url = f"{base_url}/customer?minorversion=75"
+        if booking_id:
+            cust_token = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-customer-{booking_id}"))
+            create_url += f"&requestid={cust_token}"
+
         create_res = requests.post(
             create_url,
             headers=headers,
@@ -946,8 +981,16 @@ def resolve_or_create_qbo_customer(access_token, realm_id, guest_data):
                 logging.info(f"No existing customer found with DisplayName '{display_name}'. Retrying create with unique display name '{unique_display_name}'...")
                 retry_payload = dict(create_payload)
                 retry_payload["DisplayName"] = unique_display_name
+                
+                retry_create_url = f"{base_url}/customer?minorversion=75"
+                if booking_id:
+                    retry_token = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-customer-{booking_id}-retry"))
+                    retry_create_url += f"&requestid={retry_token}"
+                else:
+                    retry_create_url = create_url
+
                 retry_res = requests.post(
-                    create_url,
+                    retry_create_url,
                     headers=headers,
                     json=retry_payload,
                     timeout=10
@@ -1052,7 +1095,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
     }
 
     # Resolve QBO customer ID or create a new one
-    customer_id = resolve_or_create_qbo_customer(access_token, realm_id, customer_data)
+    customer_id = resolve_or_create_qbo_customer(access_token, realm_id, customer_data, booking_id=booking_id)
 
     try:
         today_str = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
@@ -1130,8 +1173,14 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
         if resolved_sales_term_name:
             sales_term_ref["name"] = resolved_sales_term_name
         invoice_payload["SalesTermRef"] = sales_term_ref
+
+    invoice_url = f"{base_url}/invoice?minorversion=75"
+    if booking_id:
+        invoice_token = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-invoice-{booking_id}"))
+        invoice_url += f"&requestid={invoice_token}"
+
     response = requests.post(
-        f"{base_url}/invoice?minorversion=75",
+        invoice_url,
         headers=headers,
         json=invoice_payload,
         timeout=10,

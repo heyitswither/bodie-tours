@@ -81,7 +81,7 @@ def test_successful_retry_and_email(monkeypatch):
     )
     monkeypatch.setattr(
         "retry_unpaid_bookings.create_qbo_invoice",
-        lambda token, realm, size, guest: ("inv123", "https://pay.example.com"),
+        lambda token, realm, size, guest, **kwargs: ("inv123", "https://pay.example.com"),
     )
     monkeypatch.setattr(
         "retry_unpaid_bookings.get_m365_access_token", lambda: ("m365_token", "user_id")

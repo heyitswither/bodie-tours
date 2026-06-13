@@ -1935,3 +1935,164 @@ def test_handle_booking_less_than_week_in_advance(mock_db):
         assert "Bookings must be made at least 7 days in advance" in response_data["message"]
 
 
+@patch("main.db")
+@patch("requests.post")
+@patch("main.resolve_or_create_qbo_customer", return_value="cust_999")
+def test_create_qbo_invoice_idempotency_requestid(mock_resolve, mock_post, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+    
+    # Mock post invoice creation and public invoice link retrieval (which is a GET)
+    mock_resp = MagicMock()
+    mock_resp.status_code = 201
+    mock_resp.json.return_value = {"Invoice": {"Id": "inv_idempotent_123"}}
+    mock_post.return_value = mock_resp
+
+    with patch("requests.get") as mock_get:
+        mock_get_resp = MagicMock()
+        mock_get_resp.status_code = 200
+        mock_get_resp.json.return_value = {"Invoice": {"Id": "inv_idempotent_123", "InvoiceLink": "https://invoice.link"}}
+        mock_get.return_value = mock_get_resp
+
+        invoice_id, payment_link = main.create_qbo_invoice(
+            "token", "realm", 4, {"email": "test@example.com"}, booking_id="booking_id_888", booking_token="tok_123"
+        )
+
+        assert invoice_id == "inv_idempotent_123"
+        assert payment_link == "https://invoice.link"
+        
+        # Verify deterministic requestid token in URL
+        import uuid
+        expected_token = str(uuid.uuid5(uuid.NAMESPACE_DNS, "bodie-tours-invoice-booking_id_888"))
+        called_url = mock_post.call_args_list[0][0][0]
+        assert f"requestid={expected_token}" in called_url
+
+
+@patch("main.db")
+@patch("requests.get")
+@patch("requests.post")
+def test_inject_m365_event_pre_creation_search_check_found(mock_post, mock_get, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+
+    # Mock pre-creation check GET response returning a matching event
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = {
+        "value": [
+            {
+                "id": "existing_m365_event_777",
+                "subject": "[PENDING] Bodie Tour – Alice (Party of 2)",
+                "body": {"content": "<b>Booking ID:</b> booking_id_888<br>"}
+            }
+        ]
+    }
+    mock_get.return_value = mock_get_resp
+
+    event_id = main.inject_m365_event(
+        "token", "user_1", "2026-06-15", "10:00", {"name": "Alice"}, "booking_id_888"
+    )
+
+    # Should return the existing event ID and skip POST creation
+    assert event_id == "existing_m365_event_777"
+    assert mock_get.call_count == 1
+    assert mock_post.call_count == 0
+
+
+@patch("main.db")
+@patch("requests.get")
+@patch("requests.post")
+def test_inject_m365_event_pre_creation_search_check_not_found(mock_post, mock_get, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+
+    # Mock pre-creation check GET response returning no events
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = {"value": []}
+    mock_get.return_value = mock_get_resp
+
+    # Mock post event creation
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 201
+    mock_post_resp.json.return_value = {"id": "new_m365_event_999"}
+    mock_post.return_value = mock_post_resp
+
+    event_id = main.inject_m365_event(
+        "token", "user_1", "2026-06-15", "10:00", {"name": "Alice"}, "booking_id_888"
+    )
+
+    assert event_id == "new_m365_event_999"
+    assert mock_get.call_count == 1
+    assert mock_post.call_count == 1
+
+    # Verify standard client-request-id in post request headers
+    import uuid
+    expected_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "bodie-tours-calendar-event-booking_id_888"))
+    headers = mock_post.call_args[1]["headers"]
+    assert headers["client-request-id"] == expected_uuid
+
+
+@patch("main.db")
+@patch("main.get_m365_access_token", return_value=("m365_token", "m365_user"))
+@patch("requests.post")
+def test_send_booking_receipt_email_client_request_id_header(mock_post, mock_token, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+
+    # Mock templates to return no document (fall back to standard HTML)
+    mock_db.collection.return_value.document.return_value.get.return_value.exists = False
+
+    # Mock post email send response
+    mock_resp = MagicMock()
+    mock_resp.status_code = 202
+    mock_post.return_value = mock_resp
+
+    booking_data = {
+        "guest": {"email": "customer@example.com", "name": "Customer"},
+        "tour_datetime": "2026-06-15T10:00:00Z",
+        "party_size": 2,
+        "duration_hours": 1
+    }
+
+    success = main.send_booking_receipt_email("booking_id_888", booking_data)
+
+    assert success is True
+    assert mock_post.call_count == 1
+
+    # Verify standard client-request-id in headers
+    import uuid
+    expected_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "bodie-tours-receipt-email-booking_id_888"))
+    headers = mock_post.call_args[1]["headers"]
+    assert headers["client-request-id"] == expected_uuid
+
+
+@patch("main.db")
+@patch("main.get_m365_access_token", return_value=("m365_token", "m365_user"))
+@patch("requests.post")
+def test_send_m365_invoice_email_client_request_id_header(mock_post, mock_token, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+
+    # Mock get details from Firestore
+    mock_db.collection.return_value.document.return_value.get.return_value.to_dict.return_value = {
+        "guest": {"name": "Customer"},
+        "party_size": 2,
+        "tour_type": "private_town_tour",
+        "token": "tok_123",
+        "tour_datetime": datetime.datetime(2026, 6, 15, 10, 0, tzinfo=timezone.utc)
+    }
+
+    # Mock post email send response
+    mock_resp = MagicMock()
+    mock_resp.status_code = 202
+    mock_post.return_value = mock_resp
+
+    success = main.send_m365_invoice_email("booking_id_888", "customer@example.com", "https://pay.link", 50.00)
+
+    assert success is True
+    assert mock_post.call_count == 1
+
+    # Verify standard client-request-id in headers
+    import uuid
+    expected_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, "bodie-tours-invoice-email-booking_id_888"))
+    headers = mock_post.call_args[1]["headers"]
+    assert headers["client-request-id"] == expected_uuid
+
+
+

@@ -494,3 +494,36 @@ def test_resolve_or_create_qbo_customer_duplicate_name_vendor_collision_creates_
     post_calls = mock_post.call_args_list
     assert post_calls[0][1]["json"]["DisplayName"] == "Vendor Bob"
     assert post_calls[1][1]["json"]["DisplayName"] == "Vendor Bob - bob@example.com"
+
+
+@patch.dict(os.environ, {"TEST_QBO_CUSTOMER_LOGIC": "1"})
+@patch("main.db")
+@patch("requests.get")
+@patch("requests.post")
+def test_resolve_or_create_qbo_customer_idempotency_requestid(mock_post, mock_get, mock_db):
+    mock_db.__class__.__name__ = "FirestoreClient"
+
+    # Query returns no existing customer
+    mock_get_resp = MagicMock()
+    mock_get_resp.status_code = 200
+    mock_get_resp.json.return_value = {"QueryResponse": {}}
+    mock_get.return_value = mock_get_resp
+
+    # Create POST returns 201
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 201
+    mock_post_resp.json.return_value = {"Customer": {"Id": "cust_idempotent_123"}}
+    mock_post.return_value = mock_post_resp
+
+    guest_data = {"name": "Idempotent Guest", "email": "idempotent@example.com"}
+    booking_id = "test_booking_id_999"
+    res = main.resolve_or_create_qbo_customer("token", "realm", guest_data, booking_id=booking_id)
+
+    assert res == "cust_idempotent_123"
+    assert mock_post.call_count == 1
+    
+    # Verify requestid parameter is appended deterministically
+    import uuid
+    expected_token = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"bodie-tours-customer-{booking_id}"))
+    called_url = mock_post.call_args[0][0]
+    assert f"requestid={expected_token}" in called_url

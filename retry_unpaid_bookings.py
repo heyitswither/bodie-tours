@@ -121,7 +121,9 @@ def retry_unpaid_bookings(request):
             try:
                 qbo_token, realm_id = get_qbo_access_token()
                 invoice_id, payment_link = create_qbo_invoice(
-                    qbo_token, realm_id, party_size, guest
+                    qbo_token, realm_id, party_size, guest,
+                    booking_id=doc.id, booking_token=data.get("token"),
+                    total_amount=data.get("total_amount")
                 )
                 # Update booking document
                 doc.reference.update(
