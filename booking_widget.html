@@ -255,7 +255,7 @@
   /* Slots Styling */
   .bb-slots-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 12px;
     margin: 24px 0;
   }
@@ -964,16 +964,16 @@
     <div class="bb-confirmation">
       <div class="bb-success-icon">✓</div>
       <h2 id="bb-step-heading-4" tabindex="-1">Your Spot is Held!</h2>
-      <p>We have temporarily reserved your tour! To finalize your booking and prevent your spot from being released, please complete the secure payment link sent to your email.</p>
+      <p>We have temporarily reserved your tour! To finalize your booking and prevent your spot from being released, please complete your payment below.</p>
 
       <div class="bb-payment-card">
         <div style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; color: var(--accent-copper);">
-          <span style="font-size: 1.3rem;">✉️</span>
-          <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Check Your Email</span>
+          <span style="font-size: 1.3rem;">💳</span>
+          <span style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Secure Payment Invoice</span>
         </div>
         <h3 style="margin: 0 0 16px 0; font-size: 1.5rem; text-align: center;" id="bb-amount-display">$0.00 DUE</h3>
         <p style="font-size: 0.95rem; text-align: center; color: var(--text-muted); margin-bottom: 20px; line-height: 1.5;">
-          A secure QuickBooks payment invoice has been sent directly to <strong id="bb-confirm-email">your email</strong>. Please open the email and click the <strong>"Pay Now"</strong> button inside to complete your booking. If you do not see it, please check your spam or promotions folder.
+          Please use the button below to pay your invoice. You will be redirected to the secure QuickBooks payment portal automatically. <span id="bb-confirm-email-wrapper" style="display: none;"><strong id="bb-confirm-email"></strong></span>
         </p>
 
         <div class="bb-payment-meta">
@@ -1268,42 +1268,52 @@
   }
 
   function parseSlotKey(key, dateStr) {
+    let hours = 9;
+    let minutes = 0;
+
     if (key.includes('T')) {
       const timePart = key.split('T')[1].substring(0, 5); // e.g. "10:00"
       const parts = timePart.split(':');
       if (parts.length >= 2) {
-        const hours = parseInt(parts[0], 10);
-        const minutes = parseInt(parts[1], 10);
-        const suffix = hours >= 12 ? 'PM' : 'AM';
-        const displayHours = hours % 12 || 12;
-        const displayMinutes = String(minutes).padStart(2, '0');
-        const displayTime = `${displayHours}:${displayMinutes} ${suffix}`;
-        const apiTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        return { displayTime, apiTime };
+        hours = parseInt(parts[0], 10);
+        minutes = parseInt(parts[1], 10);
       }
-    }
-    if (key.length > 5 && !isNaN(Date.parse(key))) {
+    } else if (key.length > 5 && !isNaN(Date.parse(key))) {
       const d = new Date(key);
       if (!isNaN(d.getTime())) {
-        const displayTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-        const apiTime = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-        return { displayTime, apiTime };
+        hours = d.getHours();
+        minutes = d.getMinutes();
+      }
+    } else {
+      const parts = key.split(':');
+      if (parts.length >= 2) {
+        hours = parseInt(parts[0], 10);
+        minutes = parseInt(parts[1], 10);
       }
     }
+
+    const apiTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+    // Format Start Time
+    const startSuffix = hours >= 12 ? 'PM' : 'AM';
+    const startDisplayHours = hours % 12 || 12;
+    const startDisplayMinutes = String(minutes).padStart(2, '0');
+    const startDisplay = `${startDisplayHours}:${startDisplayMinutes} ${startSuffix}`;
+
+    // Format End Time based on Selected Tour's Duration
+    const tourKey = bbState.selectedTour;
+    const duration = (tourKey && TOURS[tourKey]) ? TOURS[tourKey].duration : 1;
     
-    const parts = key.split(':');
-    if (parts.length >= 2) {
-      const hours = parseInt(parts[0], 10);
-      const minutes = parseInt(parts[1], 10);
-      const suffix = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      const displayMinutes = String(minutes).padStart(2, '0');
-      const displayTime = `${displayHours}:${displayMinutes} ${suffix}`;
-      const apiTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-      return { displayTime, apiTime };
-    }
-    
-    return { displayTime: key, apiTime: key };
+    // Add duration hours
+    const endHours = (hours + duration) % 24;
+    const endSuffix = endHours >= 12 ? 'PM' : 'AM';
+    const endDisplayHours = endHours % 12 || 12;
+    const endDisplayMinutes = String(minutes).padStart(2, '0');
+    const endDisplay = `${endDisplayHours}:${endDisplayMinutes} ${endSuffix}`;
+
+    const displayTime = `${startDisplay} - ${endDisplay}`;
+
+    return { displayTime, apiTime };
   }
 
   function bbRenderCalendar() {
@@ -1566,6 +1576,71 @@
       }
     }
 
+    // Open a blank tab synchronously in response to the user's gesture (avoid popup blockers)
+    let paymentWindow = null;
+    try {
+      paymentWindow = window.open('about:blank', '_blank');
+      if (paymentWindow) {
+        paymentWindow.document.write(`
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Bodie Guided Tours - Secure Invoice Payment</title>
+            <style>
+              body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background-color: #121212;
+                color: #e5e2dd;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                margin: 0;
+                text-align: center;
+              }
+              .container {
+                max-width: 400px;
+                padding: 32px 24px;
+                background: #1c1a17;
+                border: 1px solid #332f2b;
+                border-radius: 12px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+              }
+              .spinner {
+                border: 3px solid rgba(212, 175, 55, 0.1);
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                border-left-color: #d4af37;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 20px auto;
+              }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+              h1 { font-family: 'Playfair Display', serif; font-size: 1.5rem; margin: 0 0 12px 0; color: #fff; letter-spacing: 0.02em; }
+              p { font-size: 0.95rem; color: #a09e9a; line-height: 1.5; margin: 0; }
+            </style>
+            <link rel="preconnect" href="https://fonts.googleapis.com">
+            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:ital,wght@0,600;1,400&display=swap" rel="stylesheet">
+          </head>
+          <body>
+            <div class="container">
+              <div class="spinner"></div>
+              <h1>Bodie Guided Tours</h1>
+              <p>Preparing your secure QuickBooks payment invoice. This will only take a moment...</p>
+            </div>
+          </body>
+          </html>
+        `);
+        paymentWindow.document.close();
+      }
+    } catch (e) {
+      console.warn("Failed to open or write to payment window:", e);
+    }
+
     bbShowLoading("Reserving slots with ranger...");
 
     const tourTypeMap = {
@@ -1640,38 +1715,67 @@
           cancelLink.href = cancelUrl;
         }
 
-        // Automatic redirect/open in new tab after 5 seconds with countdown timer
-        if (result.payment_link) {
-          let count = 5;
-          if (countdownEl) {
-            countdownEl.textContent = `Opening secure payment window in ${count} seconds...`;
-          }
-          
-          bbState.redirectInterval = setInterval(() => {
-            count--;
-            if (countdownEl) {
-              if (count > 0) {
-                countdownEl.textContent = `Opening secure payment window in ${count} seconds...`;
-              } else {
-                countdownEl.textContent = "Opening now...";
-                clearInterval(bbState.redirectInterval);
-                bbState.redirectInterval = null;
-              }
+        // Attempt to redirect the synchronously opened tab to the invoice
+        let openedInNewTab = false;
+        if (paymentWindow) {
+          try {
+            if (!paymentWindow.closed) {
+              paymentWindow.location.href = result.payment_link;
+              openedInNewTab = true;
             }
-          }, 1000);
+          } catch (e) {
+            console.warn("Failed to set payment window location:", e);
+          }
+        }
 
-          bbState.redirectTimeout = setTimeout(() => {
-            window.open(result.payment_link, '_blank');
-            bbState.redirectTimeout = null;
-          }, 5000);
+        if (openedInNewTab) {
+          if (countdownEl) {
+            countdownEl.innerHTML = `💳 Your invoice has been opened in a new tab. If it did not open, click <strong>Pay Your Invoice Now</strong> above.`;
+          }
+        } else {
+          // Fallback redirect in current tab after 5 seconds if popup was blocked/closed
+          if (result.payment_link) {
+            let count = 5;
+            if (countdownEl) {
+              countdownEl.textContent = `Redirecting to secure payment portal in ${count} seconds...`;
+            }
+            
+            bbState.redirectInterval = setInterval(() => {
+              count--;
+              if (countdownEl) {
+                if (count > 0) {
+                  countdownEl.textContent = `Redirecting to secure payment portal in ${count} seconds...`;
+                } else {
+                  countdownEl.textContent = "Redirecting now...";
+                  clearInterval(bbState.redirectInterval);
+                  bbState.redirectInterval = null;
+                }
+              }
+            }, 1000);
+
+            bbState.redirectTimeout = setTimeout(() => {
+              window.location.href = result.payment_link;
+              bbState.redirectTimeout = null;
+            }, 5000);
+          }
         }
 
         bbGoTo(4);
       } else {
+        if (paymentWindow) {
+          try {
+            paymentWindow.close();
+          } catch (e) {}
+        }
         errMsg.textContent = result.message || 'The slot is no longer available. Please select another time.';
         errBox.style.display = 'flex';
       }
     } catch (err) {
+      if (paymentWindow) {
+        try {
+          paymentWindow.close();
+        } catch (e) {}
+      }
       console.error("Booking failed:", err);
       errMsg.textContent = 'Network or connection error. Please try again.';
       errBox.style.display = 'flex';
