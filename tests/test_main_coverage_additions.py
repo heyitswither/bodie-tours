@@ -524,12 +524,18 @@ def test_tc_m16_create_qbo_invoice_production(mock_post):
             payment_link == "https://app.qbo.intuit.com/app/invoice?txnId=prod_inv_123"
         )
 
-        args, kwargs = mock_post.call_args
+        args, kwargs = mock_post.call_args_list[0]
         assert args[0].startswith(
             "https://quickbooks.api.intuit.com/v3/company/realm_id"
         ) or args[0].startswith(
             "https://sandbox-quickbooks.api.intuit.com/v3/company/realm_id"
         )
+        payload = kwargs["json"]
+        assert "DueDate" in payload
+        from datetime import datetime
+        datetime.strptime(payload["DueDate"], "%Y-%m-%d")
+        assert "SalesTermRef" in payload
+        assert payload["SalesTermRef"]["value"] == "3"
 
 
 @patch("requests.post")
@@ -549,10 +555,16 @@ def test_create_qbo_invoice_sandbox(mock_post):
             == "https://app.sandbox.qbo.intuit.com/app/invoice?txnId=sandbox_inv_123"
         )
 
-        args, kwargs = mock_post.call_args
+        args, kwargs = mock_post.call_args_list[0]
         assert args[0].startswith(
             "https://sandbox-quickbooks.api.intuit.com/v3/company/realm_id"
         )
+        payload = kwargs["json"]
+        assert "DueDate" in payload
+        from datetime import datetime
+        datetime.strptime(payload["DueDate"], "%Y-%m-%d")
+        assert "SalesTermRef" in payload
+        assert payload["SalesTermRef"]["value"] == "3"
 
 
 @patch("requests.post")
@@ -1701,3 +1713,225 @@ def test_process_booking_taken_slots_coverage():
         main.process_booking_transaction(
             transaction, inventory_ref, "2026-06-15", "10:00", 5, {"name": "Alice"}
         )
+
+
+@patch("main.resolve_or_create_qbo_customer")
+@patch("requests.post")
+def test_create_qbo_invoice_with_cancellation_link(mock_post, mock_resolve_cust):
+    mock_resolve_cust.return_value = "mock_customer_123"
+    mock_response = MagicMock()
+    mock_response.status_code = 201
+    mock_response.json.return_value = {"Invoice": {"Id": "inv_with_cancel_123"}}
+    mock_post.return_value = mock_response
+
+    with patch.dict(os.environ, {"QBO_ENVIRONMENT": "sandbox", "API_BASE_URL": "https://test-api.com"}):
+        invoice_id, payment_link = main.create_qbo_invoice(
+            "token", "realm_id", 4, {"email": "cust@example.com"},
+            booking_id="b123", booking_token="t123"
+        )
+        assert invoice_id == "inv_with_cancel_123"
+        args, kwargs = mock_post.call_args_list[0]
+        payload = kwargs["json"]
+        assert "DueDate" in payload
+        from datetime import datetime
+        datetime.strptime(payload["DueDate"], "%Y-%m-%d")
+        assert "SalesTermRef" in payload
+        assert payload["SalesTermRef"]["value"] == "3"
+        assert "To cancel your booking, click here: https://test-api.com/cancel_tour?booking_id=b123&token=t123" in payload["CustomerMemo"]["value"]
+
+
+@patch("main.resolve_or_create_qbo_customer")
+@patch("main.send_m365_invoice_email")
+@patch("requests.post")
+def test_create_qbo_invoice_with_m365_fallback_on_status_500(mock_post, mock_send_email, mock_resolve_cust):
+    mock_resolve_cust.return_value = "mock_customer_123"
+    # Mocking first call (creation of invoice) and second call (sending invoice)
+    mock_create_response = MagicMock()
+    mock_create_response.status_code = 201
+    mock_create_response.json.return_value = {"Invoice": {"Id": "inv_500"}}
+    
+    mock_send_response = MagicMock()
+    mock_send_response.status_code = 500
+    mock_send_response.text = '{"Fault":{"Error":[{"Message":"An application error has occurred"}]}}'
+    
+    # Side effect to handle multiple posts
+    mock_post.side_effect = [mock_create_response, mock_send_response]
+
+    with patch.dict(os.environ, {"QBO_ENVIRONMENT": "sandbox"}):
+        invoice_id, payment_link = main.create_qbo_invoice(
+            "token", "realm_id", 4, {"email": "cust_fail@example.com"}, booking_id="b_fail", total_amount=100.0
+        )
+        assert invoice_id == "inv_500"
+        
+        # Verify fallback email was triggered
+        mock_send_email.assert_called_once_with(
+            "b_fail", "cust_fail@example.com", payment_link, 100.0
+        )
+
+
+@patch("main.resolve_or_create_qbo_customer")
+@patch("main.send_m365_invoice_email")
+@patch("requests.post")
+def test_create_qbo_invoice_with_m365_fallback_on_exception(mock_post, mock_send_email, mock_resolve_cust):
+    mock_resolve_cust.return_value = "mock_customer_123"
+    # Mocking first call (creation of invoice) and raising exception on second call (sending invoice)
+    mock_create_response = MagicMock()
+    mock_create_response.status_code = 201
+    mock_create_response.json.return_value = {"Invoice": {"Id": "inv_exc"}}
+    
+    mock_post.side_effect = [mock_create_response, Exception("Timeout/Connection Error")]
+
+    with patch.dict(os.environ, {"QBO_ENVIRONMENT": "sandbox"}):
+        invoice_id, payment_link = main.create_qbo_invoice(
+            "token", "realm_id", 2, {"email": "cust_exc@example.com"}, booking_id="b_exc", total_amount=50.0
+        )
+        assert invoice_id == "inv_exc"
+        
+        # Verify fallback email was triggered
+        mock_send_email.assert_called_once_with(
+            "b_exc", "cust_exc@example.com", payment_link, 50.0
+        )
+
+
+@patch("main.resolve_or_create_qbo_customer")
+@patch("requests.get")
+@patch("requests.post")
+def test_create_qbo_invoice_retrieves_public_invoicelink(mock_post, mock_get, mock_resolve_cust):
+    mock_resolve_cust.return_value = "mock_customer_123"
+    # Mock POST responses:
+    # 1. create invoice
+    # 2. send invoice
+    mock_create_response = MagicMock()
+    mock_create_response.status_code = 201
+    mock_create_response.json.return_value = {"Invoice": {"Id": "inv_with_link_123"}}
+    
+    mock_send_response = MagicMock()
+    mock_send_response.status_code = 201
+    
+    mock_post.side_effect = [mock_create_response, mock_send_response]
+    
+    # Mock GET response (fetch invoice link)
+    mock_get_response = MagicMock()
+    mock_get_response.status_code = 200
+    mock_get_response.json.return_value = {
+        "Invoice": {
+            "Id": "inv_with_link_123",
+            "InvoiceLink": "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-test-link"
+        }
+    }
+    mock_get.return_value = mock_get_response
+
+    with patch.dict(os.environ, {"QBO_ENVIRONMENT": "sandbox"}):
+        invoice_id, payment_link = main.create_qbo_invoice(
+            "token", "realm_id", 4, {"email": "cust@example.com"}, booking_id="b123"
+        )
+        assert invoice_id == "inv_with_link_123"
+        assert payment_link == "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-test-link"
+        
+        # Verify POST requests were called with the correct payloads
+        assert mock_post.call_count == 2
+        # 1st call: create invoice
+        # 2nd call: send invoice
+        send_args, send_kwargs = mock_post.call_args_list[1]
+        assert send_args[0].endswith("/send")
+        assert send_kwargs["json"] == {
+            "DeliveryAddress": {
+                "Address": "cust@example.com"
+            }
+        }
+
+        # Verify GET request was called with include=invoiceLink
+        mock_get.assert_called_once()
+        args, kwargs = mock_get.call_args
+        assert "include" in kwargs["params"]
+        assert kwargs["params"]["include"] == "invoiceLink"
+
+
+@patch("main.get_m365_access_token")
+@patch("main.db")
+@patch("requests.post")
+def test_send_m365_invoice_email_includes_cancellation_link(mock_post, mock_db, mock_token_func):
+    mock_token_id = "test_user_id"
+    mock_token_func.return_value = ("mock_m365_token", mock_token_id)
+    
+    # Mock class of db to bypass MagicMock filtering in main.py
+    class MockFirestoreClient:
+        pass
+    mock_db.__class__ = MockFirestoreClient
+
+    # Mock Firestore booking document retrieval to return custom token
+    mock_doc = MagicMock()
+    mock_doc.to_dict.return_value = {
+        "guest": {"name": "Alice Cooper"},
+        "party_size": 3,
+        "tour_type": "private_town_tour",
+        "token": "cancel12345"
+    }
+    mock_db.collection.return_value.document.return_value.get.return_value = mock_doc
+    
+    # Mock request success for sendMail
+    mock_response = MagicMock()
+    mock_response.status_code = 202
+    mock_post.return_value = mock_response
+
+    with patch.dict(os.environ, {"API_BASE_URL": "https://test-api.com"}):
+        success = main.send_m365_invoice_email(
+            booking_id="b123",
+            customer_email="alice@example.com",
+            payment_link="https://pay-link.com",
+            total_amount="75.00"
+        )
+        assert success is True
+        
+        # Verify post payload includes the cancellation link
+        assert mock_post.call_count == 1
+        args, kwargs = mock_post.call_args
+        payload = kwargs["json"]
+        email_content = payload["message"]["body"]["content"]
+        assert "/cancel_tour?booking_id=b123&amp;token=cancel12345" in email_content
+
+
+@patch("main.db")
+def test_handle_booking_less_than_week_in_advance(mock_db):
+    # Setup request with a booking date less than 7 days in advance
+    # e.g., today is 2026-06-11, so booking on 2026-06-15 is 4 days in advance.
+    mock_request = MagicMock()
+    mock_request.method = "POST"
+    mock_request.headers = {
+        "Origin": "https://www.bodiefoundation.org",
+        "X-CSRF-Token": "valid_token"
+    }
+    mock_request.get_json.return_value = {
+        "date": "2026-06-15",
+        "time": "10:00",
+        "party_size": 2,
+        "tour_type": "private_town_tour",
+        "guest": {"name": "Test Guest", "email": "test@example.com"}
+    }
+    
+    # Ensure is_dummy will be False to activate the validation
+    class GcpFirestoreClient:
+        pass
+    mock_db.__class__ = GcpFirestoreClient
+    
+    # We mock the load_tours_config call and CSRF token verification
+    with patch("tours_config.load_tours_config") as mock_load_config, \
+         patch("main._verify_signed_csrf_token", return_value=True), \
+         patch.dict(os.environ, {"FORCE_DUMMY_DB": ""}):
+        mock_load_config.return_value = {
+            "private_town_tour": {
+                "name": "Private Town Tour",
+                "duration_hours": 1,
+                "max_capacity": 20
+            }
+        }
+        
+        # Call handle_booking
+        response_data, status_code, headers = main.handle_booking(mock_request)
+        
+        # Verify it returns 409 conflict and correct error message
+        assert status_code == 409
+        assert response_data["status"] == "error"
+        assert "Bookings must be made at least 7 days in advance" in response_data["message"]
+
+

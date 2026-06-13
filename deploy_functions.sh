@@ -44,7 +44,7 @@ if should_deploy "handle-booking"; then
     --allow-unauthenticated \
     --entry-point=handle_booking \
     --project="$PROJECT_ID" \
-    --set-env-vars LOG_EXECUTION_ID="true",TOUR_PRICE_PER_PERSON="25.00",EMAIL_TEMPLATE_TYPE="custom" >> "$LOG_FILE" 2>&1
+    --set-env-vars LOG_EXECUTION_ID="true",TOUR_PRICE_PER_PERSON="1.00",EMAIL_TEMPLATE_TYPE="custom" >> "$LOG_FILE" 2>&1
 fi
 
 # 2. qbo-login

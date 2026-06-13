@@ -139,6 +139,8 @@ def main():
     payload_template = {
         "date": date_str,
         "party_size": 1,
+        "tour_type": "private_town_tour",
+        "vehicle_acknowledgment": False,
         "guest": {
             "name": "Integration Test",
             "email": "test-integration@example.com",

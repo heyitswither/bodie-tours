@@ -59,6 +59,11 @@ const path = require('path');
     await page.goto('http://127.0.0.1:8081/', { waitUntil: 'networkidle0' });
     await page.waitForSelector('#bodie-booking-widget');
 
+    // Select Private Town Tour card and advance to Step 1
+    await page.click('.bb-tour-card[data-tour="private-town"]');
+    await page.click('#bb-to-step-1');
+    await page.waitForSelector('.bb-day.available');
+
     // Click June 15
     await page.evaluate(() => {
       const days = Array.from(document.querySelectorAll('.bb-day.available'));
@@ -105,6 +110,11 @@ const path = require('path');
     await page.goto('http://127.0.0.1:8081/', { waitUntil: 'networkidle0' });
     await page.waitForSelector('#bodie-booking-widget');
 
+    // Select Private Town Tour card and advance to Step 1
+    await page.click('.bb-tour-card[data-tour="private-town"]');
+    await page.click('#bb-to-step-1');
+    await page.waitForSelector('.bb-day.available');
+
     // Click June 15
     await page.evaluate(() => {
       const days = Array.from(document.querySelectorAll('.bb-day.available'));
@@ -132,6 +142,11 @@ const path = require('path');
     await page.goto('http://127.0.0.1:8081/', { waitUntil: 'networkidle0' });
     await page.waitForSelector('#bodie-booking-widget');
 
+    // Select Private Town Tour card and advance to Step 1
+    await page.click('.bb-tour-card[data-tour="private-town"]');
+    await page.click('#bb-to-step-1');
+    await page.waitForSelector('.bb-day');
+
     // Click next month button (July 2026)
     await page.click('button[aria-label="Next month"]');
     await new Promise(resolve => setTimeout(resolve, 1000));
@@ -144,6 +159,11 @@ const path = require('path');
   await runScenario('validation_failure', async () => {
     await page.goto('http://127.0.0.1:8081/', { waitUntil: 'networkidle0' });
     await page.waitForSelector('#bodie-booking-widget');
+
+    // Select Private Town Tour card and advance to Step 1
+    await page.click('.bb-tour-card[data-tour="private-town"]');
+    await page.click('#bb-to-step-1');
+    await page.waitForSelector('.bb-day.available');
 
     // Click June 15
     await page.evaluate(() => {
@@ -182,6 +202,11 @@ const path = require('path');
   await runScenario('backend_error', async () => {
     await page.goto('http://127.0.0.1:8081/', { waitUntil: 'networkidle0' });
     await page.waitForSelector('#bodie-booking-widget');
+
+    // Select Private Town Tour card and advance to Step 1
+    await page.click('.bb-tour-card[data-tour="private-town"]');
+    await page.click('#bb-to-step-1');
+    await page.waitForSelector('.bb-day.available');
 
     // Click June 15
     await page.evaluate(() => {

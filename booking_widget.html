@@ -1228,7 +1228,10 @@
       const dayDate = new Date(currentYear, currentMonth, d);
 
       const monthName = monthNames[currentMonth];
-      let isUnavailable = (dayDate < today || !bbState.availableDates[dateStr]);
+      const oneWeekFromNow = new Date(today);
+      oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
+      let isUnavailable = (dayDate < oneWeekFromNow || !bbState.availableDates[dateStr]);
+
       
       // Twilight Tour date-filtering check (only June through September)
       if (bbState.selectedTour === 'twilight') {

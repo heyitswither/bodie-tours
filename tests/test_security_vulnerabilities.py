@@ -214,6 +214,68 @@ def test_csrf_validation_fails_on_missing_mismatched():
             main.db.__class__.__name__ = "MagicMock"
 
 
+@patch("main.get_m365_access_token")
+@patch("main.check_m365_availability")
+@patch("main.process_booking_transaction")
+@patch("main.get_qbo_access_token")
+@patch("main.create_qbo_invoice")
+@patch("main.inject_m365_event")
+@patch("main.db")
+def test_csrf_validation_succeeds_with_valid_signed_token(
+    mock_db, mock_inject, mock_create_qbo, mock_get_qbo, mock_process, mock_check, mock_get_m365
+):
+    from flask import Request, Flask
+    from werkzeug.test import EnvironBuilder
+
+    # Setup mocks
+    mock_get_m365.return_value = ("test_m365_token", "test_user_id")
+    mock_check.return_value = True
+    mock_process.return_value = "booking_123"
+    mock_get_qbo.return_value = ("test_qbo_token", "realm_123")
+    mock_create_qbo.return_value = ("invoice_123", "https://qbo.intuit.com/pay/123")
+    mock_inject.return_value = "event_123"
+    mock_db.collection.return_value.document.return_value.get.return_value.to_dict.return_value = {"token": "test_token_123"}
+
+    # Force db class name to NOT contain Dummy/Mock/Proxy so that CSRF validation is active
+    main.db.__class__.__name__ = "RealProductionClient"
+
+    app = Flask(__name__)
+    with app.app_context():
+        try:
+            # 1. Generate a valid token
+            valid_token = main._generate_signed_csrf_token()
+            assert main._verify_signed_csrf_token(valid_token) is True
+
+            # 2. Perform a request using the valid token in the header (and no cookies!)
+            builder = EnvironBuilder(
+                method="POST",
+                json={
+                    "date": "2026-06-25",
+                    "time": "10:00",
+                    "party_size": 2,
+                    "tour_type": "large_group_tour",
+                    "guest": {"name": "Test Guest", "email": "test@example.com", "phone": "555-5555"}
+                },
+                headers={
+                    "X-CSRF-Token": valid_token,
+                    "Origin": "https://www.bodiefoundation.org"
+                }
+            )
+            req = Request(builder.get_environ())
+
+            response, status_code, headers = main.handle_booking(req)
+            
+            # Should succeed!
+            assert status_code == 200
+            assert response["status"] == "success"
+            assert response["booking_id"] == "booking_123"
+            assert response["payment_link"] == "https://qbo.intuit.com/pay/123"
+            assert response["token"] == "test_token_123"
+        finally:
+            main.db.__class__.__name__ = "MagicMock"
+
+
+
 def test_strict_redirect_uri_validation():
     # Test that unauthorized redirect_uri raises ValueError
     auth_doc_invalid = {

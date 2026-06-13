@@ -208,7 +208,11 @@ def test_qbo(db):
             data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
 
             res = requests.post(token_endpoint, headers=headers, data=data, timeout=10)
-            res.raise_for_status()
+            try:
+                res.raise_for_status()
+            except requests.exceptions.HTTPError as http_err:
+                print_fail(f"QBO Token refresh failed. Status: {res.status_code}, Response: {res.text}")
+                raise Exception(f"QBO Token refresh failed: {res.text}") from http_err
             token_data = res.json()
 
             new_access_token = token_data.get("access_token")
@@ -233,8 +237,20 @@ def test_qbo(db):
         if not realm_id:
             raise Exception("QBO realmId is missing in config.")
 
-        print_info(f"Performing live sandbox QBO query for realm ID: {realm_id}")
-        qbo_url = f"https://sandbox-quickbooks.api.intuit.com/v3/company/{realm_id}/companyinfo/{realm_id}?minorversion=65"
+        env = auth_data.get("environment")
+        if not isinstance(env, str):
+            env = os.environ.get("QBO_ENVIRONMENT")
+        if not isinstance(env, str):
+            env = "sandbox"
+        env = env.lower().strip()
+
+        if env == "production":
+            qbo_base = "https://quickbooks.api.intuit.com/v3/company"
+        else:
+            qbo_base = "https://sandbox-quickbooks.api.intuit.com/v3/company"
+
+        print_info(f"Performing live {env} QBO query for realm ID: {realm_id}")
+        qbo_url = f"{qbo_base}/{realm_id}/companyinfo/{realm_id}?minorversion=75"
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
@@ -457,6 +473,8 @@ def test_booking_function():
             "date": "invalid-date",
             "time": "10:00",
             "party_size": 4,
+            "tour_type": "private_town_tour",
+            "vehicle_acknowledgment": False,
             "guest": {
                 "name": "Integration Test Placeholder",
                 "email": "test@example.com",
@@ -809,6 +827,8 @@ def test_handle_booking_conflict(db):
             "date": date_str,
             "time": time_str,
             "party_size": 2,
+            "tour_type": "private_town_tour",
+            "vehicle_acknowledgment": False,
             "guest": {
                 "name": "Integration Test Conflict",
                 "email": "test-conflict@example.com",
@@ -861,6 +881,8 @@ def test_live_pruning_workflow(db):
             "created_at": created_at,
             "tour_datetime": tour_datetime,
             "party_size": 2,
+            "tour_type": "private_town_tour",
+            "vehicle_acknowledgment": False,
             "guest": {
                 "name": "Prune Test",
                 "email": "test-prune@example.com",
@@ -952,6 +974,8 @@ def test_live_retry_unpaid_workflow(db):
             "created_at": created_at,
             "tour_datetime": tour_datetime,
             "party_size": 2,
+            "tour_type": "private_town_tour",
+            "vehicle_acknowledgment": False,
             "guest": {
                 "name": "Retry Test Customer",
                 "email": "test-retry@example.com",
@@ -1105,7 +1129,7 @@ def test_successful_booking(db):
                 "timeZone": "Pacific Standard Time",
             },
             "end": {
-                "dateTime": f"{date_str}T11:00:00",
+                "dateTime": f"{date_str}T12:00:00",
                 "timeZone": "Pacific Standard Time",
             },
         }
@@ -1129,6 +1153,8 @@ def test_successful_booking(db):
             "date": date_str,
             "time": time_str,
             "party_size": 1,
+            "tour_type": "private_town_tour",
+            "vehicle_acknowledgment": False,
             "guest": {
                 "name": "Integration Test Customer",
                 "email": "test-integration@example.com",
