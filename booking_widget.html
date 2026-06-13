@@ -870,7 +870,7 @@
           <span class="bb-tour-duration">3 hrs</span>
         </div>
         <p class="bb-tour-desc">A rugged driving adventure through the historic Bodie Mining District. Participants must provide their own high-clearance 4WD vehicle. Note: there is no interior mine access.</p>
-        <div class="bb-tour-price">$100.00 <span class="bb-tour-price-unit">per person (covers 1 to 4 people, $400)</span></div>
+        <div class="bb-tour-price">$400.00 <span class="bb-tour-price-unit">(covers 1 to 4 people, +$100/addl person)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">4WD Vehicle Required</span>
           <span class="bb-tour-badge badge-copper">Max Party 15</span>
@@ -1062,7 +1062,7 @@
       name: 'Mines, Mills, Rails and Ruins Tour',
       duration: 3,
       maxParty: 15,
-      priceDesc: '$100 per person (covers 1-4 people, $400)',
+      priceDesc: '$400 (1-4 people), +$100/addl person',
       calcPrice: function(partySize) {
         if (partySize <= 4) return 400.00;
         return partySize * 100.00;
