@@ -8,7 +8,7 @@ mkdir -p "$SCREENSHOT_DIR"
 # Check if dev_server.py is running on port 8081, start it if not
 if ! curl -s http://127.0.0.1:8081/ >/dev/null; then
   echo "dev_server.py is not running on 8081. Starting it locally..."
-  python dev_server.py &
+  .venv/bin/python dev_server.py &
   DEV_SERVER_PID=$!
   sleep 4
 else

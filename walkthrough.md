@@ -214,5 +214,25 @@ Squarespace allows you to easily embed custom HTML/JavaScript elements. Follow t
 13. Click **Done** -> **Save** in the top left corner of the Squarespace page editor.
 14. View the page in your browser. The beautiful, responsive booking widget is now embedded and ready for customers!
 
+## Direct Invoice Access & Duration‑Aware Slots (Recent Improvements)
+
+We successfully implemented several powerful refinements to maximize checkout conversion and simplify user scheduling:
+
+1. **Complete Removal of Email Prompts**:
+   - Replaced all instructions to "Check your email" in the final confirmation card (Step 5/Pane 4) with direct, premium **💳 Secure Payment Invoice** cards.
+   - Users are now focused 100% on direct invoice payment on-page.
+
+2. **Popup-Blocker Safe Invoice Tab Redirect**:
+   - Implemented a highly reliable **synchronous window opening gesture** at the exact moment the user clicks "Submit Booking".
+   - This opens a elegant, themed placeholder tab ("Preparing your secure QuickBooks payment invoice...") immediately under a valid user click event, making it immune to browser popup blockers.
+   - Once the server API call succeeds, the placeholder tab redirects to the QuickBooks payment link.
+   - If the reservation fails, the placeholder tab closes automatically.
+   - In case of any custom extension blocking, the active tab falls back to a 5-second countdown redirect.
+
+3. **Duration-Aware Time Slot Ranges**:
+   - Rewrote the frontend slot parser to query the selected tour's duration (`TOURS[tourKey].duration`).
+   - The time slot selection grid elements now dynamically show the entire start-to-end time range (e.g. `10:00 AM - 12:00 PM` for a 2-hour tour, or `10:00 AM - 1:00 PM` for a 3-hour tour) instead of just the start time.
+   - Adjusted `.bb-slots-grid` min-width per slot from `120px` to `180px` to comfortably accommodate the longer ranges on all screen sizes with no awkward wrapping.
+
 <!-- GOAL_COMPLETE -->
 
