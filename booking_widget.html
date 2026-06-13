@@ -814,7 +814,7 @@
           <span class="bb-tour-duration">2 hrs</span>
         </div>
         <p class="bb-tour-desc">Enjoy a personalized walking tour through the historic streets of Bodie Ghost Town. Our expert guides will tailor the journey to your group's interests with exclusive historical stories.</p>
-        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/addl person)</span></div>
+        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">(covers 1 to 5 people, +$50/addl person)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">Walking Tour</span>
           <span class="bb-tour-badge badge-copper">Private Guide</span>
@@ -828,7 +828,7 @@
           <span class="bb-tour-duration">2 hrs</span>
         </div>
         <p class="bb-tour-desc">Explore the unique geology and scenic ecology of Mono Lake Tufa State Natural Reserve. Walk among the mysterious, towering limestone tufa formations.</p>
-        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$50/addl person)</span></div>
+        <div class="bb-tour-price">$250.00 <span class="bb-tour-price-unit">(covers 1 to 5 people, +$50/addl person)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">Walking Tour</span>
           <span class="bb-tour-badge badge-copper">Mono Lake Reserve</span>
@@ -842,7 +842,7 @@
           <span class="bb-tour-duration">2 hrs</span>
         </div>
         <p class="bb-tour-desc">Experience Bodie Ghost Town after hours as twilight sets in. Hear captivating stories of gold miners, local legends, and historic mysteries.</p>
-        <div class="bb-tour-price">$300.00 <span class="bb-tour-price-unit">minimum (covers 1 to 5 people, +$60/addl person)</span></div>
+        <div class="bb-tour-price">$300.00 <span class="bb-tour-price-unit">(covers 1 to 5 people, +$60/addl person)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">June–Sept Only</span>
           <span class="bb-tour-badge badge-copper">5:00 PM Only</span>
@@ -870,7 +870,7 @@
           <span class="bb-tour-duration">3 hrs</span>
         </div>
         <p class="bb-tour-desc">A rugged driving adventure through the historic Bodie Mining District. Participants must provide their own high-clearance 4WD vehicle. Note: there is no interior mine access.</p>
-        <div class="bb-tour-price">$100.00 <span class="bb-tour-price-unit">per person ($400 minimum)</span></div>
+        <div class="bb-tour-price">$100.00 <span class="bb-tour-price-unit">per person (covers 1 to 4 people, $400)</span></div>
         <div class="bb-tour-badges">
           <span class="bb-tour-badge badge-green">4WD Vehicle Required</span>
           <span class="bb-tour-badge badge-copper">Max Party 15</span>
@@ -1023,7 +1023,7 @@
       name: 'Private Town Tour of Bodie',
       duration: 2,
       maxParty: 20,
-      priceDesc: '$250 minimum (1-5 people), +$50/addl person',
+      priceDesc: '$250 (1-5 people), +$50/addl person',
       calcPrice: function(partySize) {
         if (partySize <= 5) return 250.00;
         return 250.00 + (partySize - 5) * 50.00;
@@ -1033,7 +1033,7 @@
       name: 'Living at the Lake Tour',
       duration: 2,
       maxParty: 20,
-      priceDesc: '$250 minimum (1-5 people), +$50/addl person',
+      priceDesc: '$250 (1-5 people), +$50/addl person',
       calcPrice: function(partySize) {
         if (partySize <= 5) return 250.00;
         return 250.00 + (partySize - 5) * 50.00;
@@ -1043,7 +1043,7 @@
       name: 'Bodie Twilight Tours',
       duration: 2,
       maxParty: 20,
-      priceDesc: '$300 minimum (1-5 people), +$60/addl person',
+      priceDesc: '$300 (1-5 people), +$60/addl person',
       calcPrice: function(partySize) {
         if (partySize <= 5) return 300.00;
         return 300.00 + (partySize - 5) * 60.00;
@@ -1062,7 +1062,7 @@
       name: 'Mines, Mills, Rails and Ruins Tour',
       duration: 3,
       maxParty: 15,
-      priceDesc: '$100 per person ($400 minimum)',
+      priceDesc: '$100 per person (covers 1-4 people, $400)',
       calcPrice: function(partySize) {
         if (partySize <= 4) return 400.00;
         return partySize * 100.00;
