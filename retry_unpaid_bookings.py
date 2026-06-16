@@ -14,7 +14,7 @@ import requests
 import requests_retry
 
 # Re‑use helpers from existing modules
-from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token
+from main import get_qbo_access_token, create_qbo_invoice, get_m365_access_token, execute_with_m365_retry
 from prune_unpaid_slots import calculate_ttl
 
 
@@ -122,7 +122,7 @@ def _send_temp_issue_email(
         },
         "saveToSentItems": "false",
     }
-    resp = requests.post(url, headers=headers, json=message, timeout=10)
+    resp = execute_with_m365_retry("POST", url, headers=headers, json=message, timeout=10)
     return resp.status_code in (200, 202)
 
 

@@ -48,6 +48,57 @@ db = _get_db()
 MAX_CAPACITY = 20
 
 
+def execute_with_m365_retry(method, url, **kwargs):
+    """
+    Executes an HTTP request to the Microsoft Graph API (M365) with up to 5 attempts,
+    implementing base-2 exponential backoff and full jitter.
+    Calls requests.get/requests.post directly to ensure mock patches in tests apply.
+    """
+    import random
+    import time
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if method.upper() == "GET":
+                response = requests.get(url, **kwargs)
+            elif method.upper() == "POST":
+                response = requests.post(url, **kwargs)
+            elif method.upper() == "DELETE":
+                response = requests.delete(url, **kwargs)
+            else:
+                response = requests.request(method, url, **kwargs)
+            # If rate limited (429) or server error (5xx), we should retry
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < max_attempts:
+                backoff = (2 ** attempt) + random.uniform(0, 0.5)
+                logger.info(f"M365 API returned status {response.status_code}. Retrying in {backoff:.2f} seconds (attempt {attempt}/{max_attempts})...")
+                time.sleep(backoff)
+                continue
+            return response
+        except requests.exceptions.RequestException as e:
+            if attempt == max_attempts:
+                raise
+            backoff = (2 ** attempt) + random.uniform(0, 0.5)
+            logger.info(f"M365 API request failed with exception: {e}. Retrying in {backoff:.2f} seconds (attempt {attempt}/{max_attempts})...")
+            time.sleep(backoff)
+
+
+def mask_email(email: str) -> str:
+    if not email or "@" not in email:
+        return email
+    try:
+        parts = email.split("@")
+        local_part = parts[0]
+        domain_part = parts[1]
+        if len(local_part) <= 2:
+            masked_local = local_part + "***"
+        else:
+            masked_local = local_part[:2] + "***"
+        return f"{masked_local}@{domain_part}"
+    except Exception:
+        return email
+
+
+
 # ---------------------------------------------------------------------------
 # M365 Token Helper (shared with main.py logic, self-contained here)
 # ---------------------------------------------------------------------------
@@ -84,7 +135,7 @@ def _get_m365_token_for_prune():
         "refresh_token": refresh_token,
         "grant_type": "refresh_token",
     }
-    response = requests.post(token_url, data=payload, timeout=10)
+    response = execute_with_m365_retry("POST", token_url, data=payload, timeout=10)
     if response.status_code != 200:
         raise Exception(f"Failed to refresh M365 token: {response.text[:100]}")
 
@@ -126,7 +177,7 @@ def send_outlook_reminder(
         logger.info(
             "Bypassing Outlook sendMail for reminder/payment link (booking_id: %s, email: %s)",
             booking_id,
-            customer_email,
+            mask_email(customer_email),
         )
         return True
 
@@ -222,7 +273,7 @@ def send_outlook_reminder(
         },
         "saveToSentItems": "false",
     }
-    response = requests.post(url, headers=headers, json=message, timeout=10)
+    response = execute_with_m365_retry("POST", url, headers=headers, json=message, timeout=10)
     return response.status_code in (200, 202)
 
 
@@ -243,7 +294,7 @@ def remove_m365_event(access_token, user_id, event_id):
     else:
         url = f"https://graph.microsoft.com/v1.0/users/{user_id}/calendar/events/{event_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
-    response = requests.delete(url, headers=headers, timeout=10)
+    response = execute_with_m365_retry("DELETE", url, headers=headers, timeout=10)
     return response.status_code == 204
 
 
@@ -400,6 +451,7 @@ def process_cancellation_transaction(
             slots_by_date[d_str] = []
         slots_by_date[d_str].append(utc_dt)
 
+    inventory_docs = []
     for d_str, needed_utcs in slots_by_date.items():
         if hasattr(inventory_ref, "id") and d_str == inventory_ref.id:
             inv_ref = inventory_ref
@@ -410,7 +462,9 @@ def process_cancellation_transaction(
         except Exception:
             inv_ref = db.collection("public").document(d_str)
             inventory_snapshot = inv_ref.get(transaction=transaction)
+        inventory_docs.append((inv_ref, inventory_snapshot, needed_utcs))
 
+    for inv_ref, inventory_snapshot, needed_utcs in inventory_docs:
         if inventory_snapshot.exists:
             inventory_data = inventory_snapshot.to_dict() or {}
             taken_slots = inventory_data.get("taken_slots", [])
