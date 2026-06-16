@@ -304,8 +304,6 @@ def process_cancellation_transaction(
             inventory_data = inventory_snapshot.to_dict() or {}
 
             # Update taken_slots array
-            from zoneinfo import ZoneInfo
-
             date_str = inventory_ref.id if not isinstance(getattr(inventory_ref, "id", None), MagicMock) else "2029-06-03"
             local_tz = ZoneInfo("America/Los_Angeles")
             try:
