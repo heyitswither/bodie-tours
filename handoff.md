@@ -17,7 +17,7 @@ The Bodie State Park serverless booking system is fully hardened against securit
    - **`tour_datetime` Standardization:** Standardized the database schema to store `tour_datetime` as Firestore Timestamps (UTC Raw Datetime) rather than ISO strings.
    - **Local Pacific Timezone Support:** Standardized on `America/Los_Angeles` timezone for all date calculations, display formatting, and automated pruning.
    - **Reminder Frequency and Limits:** Configured reminders to be capped at 2, sending the second reminder email at quarter TTL (75% elapsed / 25% remaining).
-   - **Dynamic Cancellation Link Integration:** Integrated secure `/cancel_tour?booking_id={booking_id}&token={token}` links directly in all receipt and reminder emails.
+   - **Dynamic Cancellation Link Integration:** Integrated secure `/cancel-tour?booking_id={booking_id}&token={token}` links directly in all receipt and reminder emails.
    - **Receipt ICS Calendar Attachment:** Added automated `.ics` calendar invitation attachments to receipt emails.
    - **Optimized Exclusions:** Cleaned up and standardized Git and Google Cloud Function deployments in `.gitignore` and `.gcloudignore`.
 

@@ -31,7 +31,12 @@ def index():
         # Replace the production M365 Availability URL with our local endpoint
         content = content.replace(
             "https://us-west2-bodie-tours-prod.cloudfunctions.net/m365-free-availability",
-            "/m365/free-availability",
+            "/m365-free-availability",
+        )
+        # Replace the production cancel-tour URL with our local endpoint
+        content = content.replace(
+            "https://us-west2-bodie-tours-prod.cloudfunctions.net/cancel-tour",
+            "/cancel-tour",
         )
 
         # Replace any local dev port 8081 from previous agent modifications
@@ -160,7 +165,7 @@ def after_request(response):
     return response
 
 
-@app.route("/m365/free-availability", methods=["GET"])
+@app.route("/m365-free-availability", methods=["GET"])
 def m365_free_availability():
     """Return available tour slots based on M365 calendar 'Bodie Tours' with free status.
     To ensure 100% stable, offline-capable local testing and Puppeteer simulations,
@@ -180,6 +185,17 @@ def m365_free_availability():
         }
     }
     return jsonify(mock_response)
+
+
+@app.route("/cancel-tour", methods=["GET", "OPTIONS"])
+def cancel_tour():
+    if request.method == "OPTIONS":
+        return "", 200
+    booking_id = request.args.get("booking_id")
+    token = request.args.get("token")
+    if not booking_id or not token:
+        return jsonify({"status": "error", "message": "Missing booking_id or token"}), 400
+    return jsonify({"status": "success", "message": f"Booking {booking_id} cancelled successfully!"}), 200
 
 
 if __name__ == "__main__":

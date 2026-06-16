@@ -177,6 +177,12 @@ This function checks for expired unpaid bookings, cancels them, and removes cale
 
 
 ### Step 8: Configure the Cloud Scheduler Job for Pruning
+
+> [!NOTE]
+> This step is now **fully automated**! The optimized deployment script `deploy_functions.sh` automatically fetches your live Cloud Function's URL and creates or updates this Cloud Scheduler job for you during deployment.
+
+If you ever need to manually verify or recreate the job in the Google Cloud Console, here are the configurations used by the script:
+
 1. In the search bar at the top of the Google Cloud Console, search for `Cloud Scheduler` and select **Cloud Scheduler**.
 2. Click **Create Job**.
 3. Configure the Scheduler job with the following parameters:
@@ -184,12 +190,13 @@ This function checks for expired unpaid bookings, cancels them, and removes cale
    - **Frequency**: `*/15 * * * *` (runs every 15 minutes)
    - **Timezone**: Choose your timezone.
    - **Target Type**: HTTP
-   - **URL**: `https://us-west2-your-project-id.cloudfunctions.net/prune-unpaid-slugs`
+   - **URL**: `https://<region>-<project-id>.cloudfunctions.net/prune-unpaid-slots`
    - **HTTP Method**: POST
    - **Auth Header**: Select **Add OIDC token**.
-   - **Service Account**: Select the service account we created in Step 3 (`cloud-scheduler-invoker@your-project-id.iam.gserviceaccount.com`).
-   - **Audience**: `https://us-west2-your-project-id.cloudfunctions.net/prune-unpaid-slugs`
+   - **Service Account**: Select the service account created in Step 3 (`cloud-scheduler-invoker@your-project-id.iam.gserviceaccount.com`).
+   - **Audience**: `https://<region>-<project-id>.cloudfunctions.net/prune-unpaid-slots`
 4. Click **Create**.
+
 Cloud Scheduler will now automatically call the pruning endpoint securely every 15 minutes, authenticating using OIDC.
 
 ### Step 9: Integrate the Booking Widget into Squarespace

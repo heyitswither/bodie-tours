@@ -219,6 +219,7 @@ def test_pruning_reminder_guest_and_duplicate_prevention(mock_db):
             payment_link=None,
             party_size=2,
             token=None,
+            total_amount=None,
         )
         # Check that reminder_sent: "increment_sentinel" was written to Firestore
         mock_booking_doc.reference.update.assert_called_once_with(

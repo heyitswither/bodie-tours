@@ -463,7 +463,7 @@ def send_booking_receipt_email(booking_id, data):
     api_base_url = api_base_url.rstrip("/")
     token = data.get("token") or ""
     cancellation_link = (
-        f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token}"
+        f"{api_base_url}/cancel-tour?booking_id={booking_id}&token={token}"
     )
 
     if not body:
@@ -599,7 +599,7 @@ def send_m365_invoice_email(booking_id, customer_email, payment_link, total_amou
     )
     api_base_url = api_base_url.rstrip("/")
     cancellation_link = (
-        f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={booking_token}"
+        f"{api_base_url}/cancel-tour?booking_id={booking_id}&token={booking_token}"
     )
 
     # Format dynamic total_amount safely
@@ -1084,7 +1084,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
         )
         api_base_url = api_base_url.rstrip("/")
         cancellation_link = (
-            f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={booking_token}"
+            f"{api_base_url}/cancel-tour?booking_id={booking_id}&token={booking_token}"
         )
         memo_value += f"\n\nTo cancel your booking, click here: {cancellation_link}"
 
@@ -2530,7 +2530,7 @@ def cancel_tour(request):
     if request.method == "OPTIONS":
         headers = {
             "Access-Control-Allow-Origin": cors_origin,
-            "Access-Control-Allow-Methods": "POST",
+            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "Content-Type",
             "Access-Control-Max-Age": "3600",
         }

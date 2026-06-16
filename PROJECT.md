@@ -15,7 +15,7 @@ The Bodie State Park Booking System is a serverless backend integration that man
 
 ## Core Contracts & Interfaces
 - **Front-end URL:** `http://localhost:8000/booking_widget.html`
-- **Backend API Base:** `http://localhost:8081/` (REST endpoints: `handle_booking`, `cancel_tour`, `qbo_login`, `qbo_callback`, `m365_login`, `m365_callback`, `retry_unpaid_bookings`, etc.)
+- **Backend API Base:** `http://localhost:8081/` (REST endpoints: `handle-booking`, `cancel-tour`, `qbo-login`, `qbo-callback`, `m365-login`, `m365-callback`, `retry-unpaid-bookings`, etc.)
 - **Named Database:** Dedicated Firestore instance named `bodie-tours`
 
 ## Repository Structure
@@ -27,6 +27,7 @@ The Bodie State Park Booking System is a serverless backend integration that man
 - `tests/` – Python unit, integration, and E2E test suites with mock Firestore layers
 
 ## Documentation
+- [Master Technical Documentation](file:///home/freya/bodie-tours/MASTER_DOCUMENTATION.md) – Fully consolidated system specifications, schemas, security remediations, and guides
 - [Walkthrough & Deployment Guide](file:///home/freya/bodie-tours/walkthrough.md) – Step-by-step setup, OAuth configuration, and verification notes
 - [Security Review Report](file:///home/freya/bodie-tours/SECURITY-REVIEW.md) – Log of remediated high-confidence vulnerabilities
 - [System Handoff Report](file:///home/freya/bodie-tours/handoff.md) – Production transition checklist and feature outcomes

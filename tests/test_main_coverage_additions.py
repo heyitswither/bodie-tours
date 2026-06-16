@@ -1737,7 +1737,7 @@ def test_create_qbo_invoice_with_cancellation_link(mock_post, mock_resolve_cust)
         datetime.strptime(payload["DueDate"], "%Y-%m-%d")
         assert "SalesTermRef" in payload
         assert payload["SalesTermRef"]["value"] == "3"
-        assert "To cancel your booking, click here: https://test-api.com/cancel_tour?booking_id=b123&token=t123" in payload["CustomerMemo"]["value"]
+        assert "To cancel your booking, click here: https://test-api.com/cancel-tour?booking_id=b123&token=t123" in payload["CustomerMemo"]["value"]
 
 
 @patch("main.resolve_or_create_qbo_customer")
@@ -1888,7 +1888,7 @@ def test_send_m365_invoice_email_includes_cancellation_link(mock_post, mock_db, 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
         email_content = payload["message"]["body"]["content"]
-        assert "/cancel_tour?booking_id=b123&amp;token=cancel12345" in email_content
+        assert "/cancel-tour?booking_id=b123&amp;token=cancel12345" in email_content
 
 
 @patch("main.db")

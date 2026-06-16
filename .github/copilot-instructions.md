@@ -14,7 +14,7 @@ Build / Test / Lint
 
 - Run local dev server (serves booking_widget.html + mock endpoints):
   - python dev_server.py
-  - Default: http://localhost:8082/
+  - Default: http://localhost:8081/
 
 - Run a Cloud Function locally (functions-framework):
   - functions-framework --target=handle_booking --port=8081 --debug

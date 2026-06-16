@@ -117,6 +117,7 @@ def send_outlook_reminder(
     payment_link=None,
     party_size=1,
     token=None,
+    total_amount=None,
 ):
     """Send an email reminder via M365 Graph API /sendMail before pruning.
     BUT: Do not use Outlook to send payment links or reminders in non-test mode.
@@ -139,7 +140,7 @@ def send_outlook_reminder(
     )
     api_base_url = api_base_url.rstrip("/")
     cancellation_link = (
-        f"{api_base_url}/cancel_tour?booking_id={booking_id}&token={token or ''}"
+        f"{api_base_url}/cancel-tour?booking_id={booking_id}&token={token or ''}"
     )
 
     # Define simple template with placeholders
@@ -175,8 +176,14 @@ def send_outlook_reminder(
         body = simple_body
 
     # Format placeholders safely
-    price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
-    total_amount = f"{price * party_size:.2f}"
+    if total_amount is None:
+        price = float(os.getenv("TOUR_PRICE_PER_PERSON", "25.00"))
+        formatted_total = f"{price * party_size:.2f}"
+    else:
+        try:
+            formatted_total = f"{float(total_amount):.2f}"
+        except (ValueError, TypeError):
+            formatted_total = str(total_amount)
 
     # 1. Format subject (plain text, NO HTML escaping)
     for key, val in [
@@ -185,7 +192,7 @@ def send_outlook_reminder(
         ("tour_datetime_str", str(tour_datetime_str)),
         ("payment_link", payment_link or ""),
         ("party_size", str(party_size)),
-        ("total_amount", total_amount),
+        ("total_amount", formatted_total),
         ("cancellation_link", cancellation_link),
     ]:
         subject = subject.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
@@ -197,7 +204,7 @@ def send_outlook_reminder(
         ("tour_datetime_str", html.escape(str(tour_datetime_str))),
         ("payment_link", html.escape(str(payment_link or ""))),
         ("party_size", html.escape(str(party_size))),
-        ("total_amount", html.escape(str(total_amount))),
+        ("total_amount", html.escape(str(formatted_total))),
         ("cancellation_link", html.escape(str(cancellation_link))),
     ]:
         body = body.replace(f"{{{{{key}}}}}", val).replace(f"{{{key}}}", val)
@@ -619,6 +626,7 @@ def prune_unpaid_slots(request):
                         payment_link=data.get("payment_link"),
                         party_size=data.get("party_size", 1),
                         token=data.get("token"),
+                        total_amount=data.get("total_amount"),
                     )
                     if sent:
                         reminder_count += 1
