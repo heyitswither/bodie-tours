@@ -85,21 +85,25 @@ def open_browser_and_poll(db, doc_path, login_url, timeout=300):
     print_warn(f"Authorization tokens missing in config/{doc_path}.")
     print_info(f"Opening web browser to authorize: {login_url}")
     try:
-        # Only attempt to auto-open the browser when the BROWSER env var is set
-        if os.environ.get("BROWSER"):
+        browser_cmd = os.environ.get("BROWSER")
+        if browser_cmd:
+            print_info(f"Auto-launching browser via custom $BROWSER command: {browser_cmd}")
+            subprocess.run(
+                [browser_cmd, login_url],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            print_info("BROWSER environment variable is unset. Defaulting to auto-launch via xdg-open...")
             subprocess.run(
                 ["xdg-open", login_url],
                 check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        else:
-            print_info(
-                "Auto-opening browser disabled. Set the BROWSER env var to enable."
-            )
-            print_info(f"Please open this URL manually in your browser: {login_url}")
     except Exception as e:
-        print_warn(f"Failed to automatically open browser via xdg-open: {e}")
+        print_warn(f"Failed to automatically open browser: {e}")
         print_info(f"Please open this URL manually in your browser: {login_url}")
 
     print_info("Waiting and polling Firestore for token update (Ctrl+C to cancel)...")
@@ -1293,6 +1297,11 @@ def test_cancel_tour_validation():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Verify Bodie State Park Tours integrations.")
+    parser.add_argument("--tokens-only", action="store_true", help="Only check, refresh and authorize OAuth tokens.")
+    args = parser.parse_known_args()[0]
+
     # Initialize Firestore Client
     try:
         db = firestore.Client(database="bodie-tours")
@@ -1301,20 +1310,27 @@ def main():
         sys.exit(1)
 
     # Run tests sequentially
-    tests = [
-        ("Firestore Core Operations", lambda: test_firestore(db)),
-        ("QBO Integration Connection", lambda: test_qbo(db)),
-        ("M365 Integration Connection", lambda: test_m365(db)),
-        ("Live Booking Endpoint CORS/Validation", test_booking_function),
-        ("Live Pruning Cloud Scheduler Auth", test_pruning_function),
-        ("Live Retry Cloud Scheduler Auth", test_retry_unpaid_function),
-        ("Live cancel-tour Endpoint Parameter Validation", test_cancel_tour_validation),
-        ("M365 Availability and Filtering Flow", lambda: test_m365_availability_and_filtering(db)),
-        ("Live Booking Double-Booking Conflict Detection", lambda: test_handle_booking_conflict(db)),
-        ("Live Pruning Scheduled Maintenance Execution", lambda: test_live_pruning_workflow(db)),
-        ("Live Retry Unpaid Scheduled Maintenance Execution", lambda: test_live_retry_unpaid_workflow(db)),
-        ("Live Happy Path E2E Booking Transaction", lambda: test_successful_booking(db)),
-    ]
+    if args.tokens_only:
+        tests = [
+            ("Firestore Core Operations", lambda: test_firestore(db)),
+            ("QBO Integration Connection", lambda: test_qbo(db)),
+            ("M365 Integration Connection", lambda: test_m365(db)),
+        ]
+    else:
+        tests = [
+            ("Firestore Core Operations", lambda: test_firestore(db)),
+            ("QBO Integration Connection", lambda: test_qbo(db)),
+            ("M365 Integration Connection", lambda: test_m365(db)),
+            ("Live Booking Endpoint CORS/Validation", test_booking_function),
+            ("Live Pruning Cloud Scheduler Auth", test_pruning_function),
+            ("Live Retry Cloud Scheduler Auth", test_retry_unpaid_function),
+            ("Live cancel-tour Endpoint Parameter Validation", test_cancel_tour_validation),
+            ("M365 Availability and Filtering Flow", lambda: test_m365_availability_and_filtering(db)),
+            ("Live Booking Double-Booking Conflict Detection", lambda: test_handle_booking_conflict(db)),
+            ("Live Pruning Scheduled Maintenance Execution", lambda: test_live_pruning_workflow(db)),
+            ("Live Retry Unpaid Scheduled Maintenance Execution", lambda: test_live_retry_unpaid_workflow(db)),
+            ("Live Happy Path E2E Booking Transaction", lambda: test_successful_booking(db)),
+        ]
 
     failed = False
     for name, test_func in tests:

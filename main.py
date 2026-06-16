@@ -104,6 +104,37 @@ MAX_GROUP_SIZE = 20
 # ---------------------------------------------------------------------------
 
 
+def execute_with_m365_retry(method, url, **kwargs):
+    """
+    Executes an HTTP request to the Microsoft Graph API (M365) with up to 5 attempts,
+    implementing base-2 exponential backoff and full jitter.
+    Calls requests.get/requests.post directly to ensure mock patches in tests apply.
+    """
+    import random
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if method.upper() == "GET":
+                response = requests.get(url, **kwargs)
+            elif method.upper() == "POST":
+                response = requests.post(url, **kwargs)
+            else:
+                response = requests.request(method, url, **kwargs)
+            # If rate limited (429) or server error (5xx), we should retry
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < max_attempts:
+                backoff = (2 ** attempt) + random.uniform(0, 0.5)
+                logging.info(f"M365 API returned status {response.status_code}. Retrying in {backoff:.2f} seconds (attempt {attempt}/{max_attempts})...")
+                time.sleep(backoff)
+                continue
+            return response
+        except requests.exceptions.RequestException as e:
+            if attempt == max_attempts:
+                raise
+            backoff = (2 ** attempt) + random.uniform(0, 0.5)
+            logging.info(f"M365 API request failed with exception: {e}. Retrying in {backoff:.2f} seconds (attempt {attempt}/{max_attempts})...")
+            time.sleep(backoff)
+
+
 def get_m365_access_token(force=False):
     if db.__class__.__name__ == "DummyFirestore":
         return "mock_m365_token", "mock_m365_user_id"
@@ -150,7 +181,7 @@ def get_m365_access_token(force=False):
         "grant_type": "refresh_token",
     }
 
-    response = requests.post(token_url, data=payload, timeout=10)
+    response = execute_with_m365_retry("POST", token_url, data=payload, timeout=10)
     if response.status_code != 200:
         raise Exception(f"Failed to refresh M365 token: {response.text[:100]}")
 
@@ -253,7 +284,7 @@ def check_m365_availability(
             f"&$select=subject,showAs,start,end"
         )
 
-    response = requests.get(url, headers=headers, timeout=10)
+    response = execute_with_m365_retry("GET", url, headers=headers, timeout=10)
     if response.status_code != 200:
         raise Exception(f"Failed to query M365 calendar: {response.text[:100]}")
 
@@ -347,7 +378,8 @@ def inject_m365_event(
         # Pre-creation check: see if calendar event already exists
         try:
             filter_str = f"start/dateTime eq '{start_dt.strftime('%Y-%m-%dT%H:%M:%S')}'"
-            check_response = requests.get(
+            check_response = execute_with_m365_retry(
+                "GET",
                 url,
                 headers=headers,
                 params={"$filter": filter_str},
@@ -365,7 +397,7 @@ def inject_m365_event(
         except Exception as e:
             logging.warning(f"Error checking for pre-existing M365 calendar event: {e}")
 
-    response = requests.post(url, headers=headers, json=event_payload, timeout=10)
+    response = execute_with_m365_retry("POST", url, headers=headers, json=event_payload, timeout=10)
     if response.status_code not in (200, 201):
         raise Exception(f"Failed to inject M365 event: {response.text[:100]}")
 
@@ -539,11 +571,15 @@ def send_booking_receipt_email(booking_id, data):
         )
         return True
 
-    res = requests.post(url, headers=headers, json=message, timeout=10)
-    if res.status_code not in (200, 202, 201):
-        logging.error("Failed to send receipt email via M365: %s", res.text[:100])
+    try:
+        res = execute_with_m365_retry("POST", url, headers=headers, json=message, timeout=10)
+        if res.status_code not in (200, 202, 201):
+            logging.error("Failed to send receipt email via M365: %s", res.text[:100])
+            return False
+        return True
+    except Exception as email_ex:
+        logging.exception("Failed to send receipt email via M365 due to exception: %s", email_ex)
         return False
-    return True
 
 
 def send_m365_invoice_email(booking_id, customer_email, payment_link, total_amount):
@@ -692,18 +728,75 @@ def send_m365_invoice_email(booking_id, customer_email, payment_link, total_amou
         )
         return True
 
-    res = requests.post(url, headers=headers, json=message, timeout=10)
-    if res.status_code not in (200, 202, 201):
-        logging.error("Failed to send fallback invoice email via M365: %s", res.text[:100])
+    try:
+        res = execute_with_m365_retry("POST", url, headers=headers, json=message, timeout=10)
+        if res.status_code not in (200, 202, 201):
+            logging.error("Failed to send fallback invoice email via M365: %s", res.text[:100])
+            return False
+        
+        logging.info(f"Successfully sent fallback invoice email via M365 to {customer_email}")
+        return True
+    except Exception as email_ex:
+        logging.exception("Failed to send fallback invoice email via M365 due to exception: %s", email_ex)
         return False
-    
-    logging.info(f"Successfully sent fallback invoice email via M365 to {customer_email}")
-    return True
 
 
 # ---------------------------------------------------------------------------
 # QBO Helpers
 # ---------------------------------------------------------------------------
+
+
+def _mask_sensitive_qbo_text(text):
+    """
+    Securely mask sensitive QBO response/request details (PII and credentials)
+    in logs or error messages.
+    """
+    if not text:
+        return text
+    import re
+    import json
+    if not isinstance(text, str):
+        text = str(text)
+
+    sensitive_keys = {
+        "PrimaryEmailAddr", "Address", "BillEmail", "DisplayName", 
+        "PrimaryPhone", "FreeFormNumber", "client_secret", "access_token", 
+        "refresh_token", "realmId", "client_id", "verifier_token"
+    }
+
+    def mask_value(val):
+        if isinstance(val, dict):
+            return {k: (mask_value(v) if k in sensitive_keys else mask_dict_list(v)) for k, v in val.items()}
+        elif isinstance(val, list):
+            return [mask_value(item) for item in val]
+        else:
+            return "[MASKED]"
+
+    def mask_dict_list(val):
+        if isinstance(val, dict):
+            return {k: (mask_value(v) if k in sensitive_keys else mask_dict_list(v)) for k, v in val.items()}
+        elif isinstance(val, list):
+            return [mask_dict_list(item) for item in val]
+        return val
+
+    try:
+        parsed = json.loads(text)
+        masked_parsed = mask_dict_list(parsed)
+        return json.dumps(masked_parsed)
+    except Exception:
+        pass
+
+    masked_text = text
+    masked_text = re.sub(r'[\w\.-]+@[\w\.-]+\.\w+', '[MASKED_EMAIL]', masked_text)
+    masked_text = re.sub(r'\b(?:\+?\d{1,3}[-. ]?)?\(?\d{3}\)?[-. ]?\d{3}[-. ]?\d{4}\b', '[MASKED_PHONE]', masked_text)
+    
+    for key in sensitive_keys:
+        pattern = re.compile(rf'("{key}"\s*:\s*)"[^"]*"', re.IGNORECASE)
+        masked_text = pattern.sub(r'\1"[MASKED]"', masked_text)
+        pattern_unquoted = re.compile(rf'("{key}"\s*:\s*)[^,\s}}]+', re.IGNORECASE)
+        masked_text = pattern_unquoted.sub(r'\1"[MASKED]"', masked_text)
+
+    return masked_text
 
 
 def _resolve_qbo_credentials(auth_data):
@@ -822,8 +915,9 @@ def get_qbo_access_token(force=False):
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError as http_err:
-        logging.error(f"QBO Token refresh failed. Status: {response.status_code}, Response: {response.text}")
-        raise Exception(f"QBO Token refresh failed: {response.text}") from http_err
+        masked_res = _mask_sensitive_qbo_text(response.text)
+        logging.error(f"QBO Token refresh failed. Status: {response.status_code}, Response: {masked_res}")
+        raise Exception(f"QBO Token refresh failed: {masked_res}") from http_err
     token_data = response.json()
 
     new_access_token = token_data.get("access_token")
@@ -1002,7 +1096,7 @@ def resolve_or_create_qbo_customer(access_token, realm_id, guest_data, booking_i
                         logging.info(f"Successfully created unique QBO customer with ID '{retry_customer_id}' for email '{email}'.")
                         return retry_customer_id
                     
-                logging.error(f"Failed to retry create unique QBO customer. Status: {retry_res.status_code}, Response: {retry_res.text}")
+                logging.error(f"Failed to retry create unique QBO customer. Status: {retry_res.status_code}, Response: {_mask_sensitive_qbo_text(retry_res.text)}")
 
         logging.error(f"Failed to query/create QBO customer. Query status: {response.status_code}, Create status: {create_res.status_code}")
         return "1"
@@ -1141,7 +1235,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
                     if not resolved_sales_term_value:
                         logging.warning("No QBO term containing 'receipt' was found. Omitting SalesTermRef.")
                 else:
-                    logging.warning(f"Failed to query QBO Terms (status {response.status_code}): {response.text}")
+                    logging.warning(f"Failed to query QBO Terms (status {response.status_code}): {_mask_sensitive_qbo_text(response.text)}")
             except Exception as e:
                 logging.exception("Exception querying QBO Terms: %s", e)
 
@@ -1186,7 +1280,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
         timeout=10,
     )
     if response.status_code not in (200, 201):
-        raise Exception(f"Failed to create QBO invoice: {response.text[:100]}")
+        raise Exception(f"Failed to create QBO invoice: {_mask_sensitive_qbo_text(response.text)[:100]}")
     response_data = response.json()
     invoice = response_data.get("Invoice", {})
     invoice_id = invoice.get("Id")
@@ -1217,7 +1311,7 @@ def create_qbo_invoice(access_token, realm_id, party_size, customer_data, bookin
                 qbo_send_success = True
                 logging.info(f"Successfully sent QBO invoice email via native API to {email_address}.")
             else:
-                logging.error(f"Failed to send QBO invoice email (status {send_response.status_code}): {send_response.text[:200]}")
+                logging.error(f"Failed to send QBO invoice email (status {send_response.status_code}): {_mask_sensitive_qbo_text(send_response.text)[:200]}")
         except Exception as send_err:
             logging.exception("Error calling QBO invoice send API: %s", send_err)
     else:
@@ -1276,6 +1370,7 @@ def process_booking_transaction(
     """
     Executes an atomic read-modify-write operation to prevent double-booking.
     Now supports booking consecutive slots transactionally for long-duration tours.
+    Standardized to execute ALL reads before any writes.
     """
     if party_size <= 0:
         raise ValueError("Party size must be greater than 0.")
@@ -1301,13 +1396,20 @@ def process_booking_transaction(
             slots_by_date[d_str] = []
         slots_by_date[d_str].append((utc_dt, h_str, local_dt.strftime("%Y-%m-%d %H:%M")))
 
-    # Process and write reservations for each date needed in the transaction
-    for d_str, needed_slots in slots_by_date.items():
+    # 1. READ PHASE: Retrieve all snapshots first to satisfy the Firestore transaction read-before-write constraint.
+    read_snapshots = {}
+    for d_str in slots_by_date.keys():
         if d_str == date_str:
             inv_ref = inventory_ref
         else:
             inv_ref = db.collection("public").document(d_str)
         snapshot = inv_ref.get(transaction=transaction)
+        read_snapshots[d_str] = (inv_ref, snapshot)
+
+    # 2. VALIDATE PHASE: Perform validation and prepare payloads for writes
+    writes_to_perform = {}
+    for d_str, needed_slots in slots_by_date.items():
+        inv_ref, snapshot = read_snapshots[d_str]
 
         if not snapshot.exists:
             inventory_data = {}
@@ -1353,13 +1455,17 @@ def process_booking_transaction(
         for utc_dt, _, _ in needed_slots:
             new_taken.append(utc_dt)
 
+        writes_to_perform[inv_ref] = {
+            "date": d_str,
+            "taken_slots": new_taken,
+            "last_updated": firestore.SERVER_TIMESTAMP,
+        }
+
+    # 3. WRITE PHASE: Perform all writes only after all reads and validations are complete.
+    for inv_ref, payload in writes_to_perform.items():
         transaction.set(
             inv_ref,
-            {
-                "date": d_str,
-                "taken_slots": new_taken,
-                "last_updated": firestore.SERVER_TIMESTAMP,
-            },
+            payload,
             merge=True,
         )
 
@@ -1695,6 +1801,7 @@ def handle_booking(request):
             vehicle_acknowledgment=vehicle_acknowledgment, total_amount=total_amount
         )
 
+        qbo_failed = False
         try:
             # Fetch the generated booking token to build the cancellation link
             booking_token = None
@@ -1706,24 +1813,36 @@ def handle_booking(request):
                     pass
 
             # 4. QBO Invoice Generation
-            qbo_token, realm_id = get_qbo_access_token()
-            invoice_id, payment_link = create_qbo_invoice(
-                qbo_token, realm_id, party_size, guest_data, booking_id=booking_id, booking_token=booking_token, total_amount=total_amount
-            )
+            try:
+                qbo_token, realm_id = get_qbo_access_token()
+                invoice_id, payment_link = create_qbo_invoice(
+                    qbo_token, realm_id, party_size, guest_data, booking_id=booking_id, booking_token=booking_token, total_amount=total_amount
+                )
+            except Exception as qbo_err:
+                qbo_failed = True
+                raise qbo_err
 
             # 5. M365 Calendar Event Injection
-            event_guest_data = dict(guest_data)
-            event_guest_data["party_size"] = party_size
-            m365_event_id = inject_m365_event(
-                m365_token,
-                m365_user_id,
-                date_str,
-                time_str,
-                event_guest_data,
-                booking_id,
-                calendar_id,
-                duration_hours=duration_hours
-            )
+            m365_event_id = None
+            try:
+                event_guest_data = dict(guest_data)
+                event_guest_data["party_size"] = party_size
+                m365_event_id = inject_m365_event(
+                    m365_token,
+                    m365_user_id,
+                    date_str,
+                    time_str,
+                    event_guest_data,
+                    booking_id,
+                    calendar_id,
+                    duration_hours=duration_hours
+                )
+            except Exception as m365_exc:
+                logging.exception(
+                    "Non-fatal error: Failed to inject M365 calendar event for booking %s: %s. Booking remains valid.",
+                    booking_id,
+                    m365_exc,
+                )
 
             # 6. Update booking document with integration IDs
             db.collection("bookings").document(booking_id).update(
@@ -1796,78 +1915,75 @@ def handle_booking(request):
                         del_err,
                     )
 
-                # Revert inventory reservation, preferring current 'taken_slots' schema
+                # Revert inventory reservation completely across all dates and hours reserved
                 try:
-                    inv_snap = inventory_ref.get()
-                    if getattr(inv_snap, "exists", True):
-                        inv_data = inv_snap.to_dict() or {}
-                        # Prefer taken_slots list (current schema)
-                        if "taken_slots" in inv_data:
-                            taken = inv_data.get("taken_slots", [])
-                            # Build local key matching stored format (YYYY-MM-DD HH:MM)
-                            try:
-                                local_key = dt_local.strftime("%Y-%m-%d %H:%M")
-                            except Exception:
-                                local_key = None
-                            new_taken = []
-                            for ts in taken:
-                                try:
-                                    if isinstance(ts, str):
-                                        parsed = _safe_fromisoformat(ts)
-                                    else:
-                                        parsed = ts
-                                    parsed_local = (
-                                        parsed.astimezone(
-                                            ZoneInfo("America/Los_Angeles")
+                    consecutive_local_dts = [dt_local + timedelta(hours=i) for i in range(duration_hours)]
+                    slots_by_date = {}
+                    for local_dt in consecutive_local_dts:
+                        d_str = local_dt.strftime("%Y-%m-%d")
+                        h_str = local_dt.strftime("%H:%M")
+                        full_local_key = local_dt.strftime("%Y-%m-%d %H:%M")
+                        if d_str not in slots_by_date:
+                            slots_by_date[d_str] = []
+                        slots_by_date[d_str].append((h_str, full_local_key))
+
+                    for d_str, needed_keys in slots_by_date.items():
+                        inv_doc_ref = db.collection("public").document(d_str)
+                        inv_snap = inv_doc_ref.get()
+                        if getattr(inv_snap, "exists", True):
+                            inv_data = inv_snap.to_dict() or {}
+                            # Revert taken_slots, preferring current 'taken_slots' schema
+                            if "taken_slots" in inv_data:
+                                taken = inv_data.get("taken_slots", [])
+                                new_taken = []
+                                for ts in taken:
+                                    try:
+                                        if isinstance(ts, str):
+                                            parsed = _safe_fromisoformat(ts)
+                                        else:
+                                            parsed = ts
+                                        parsed_local = (
+                                            parsed.astimezone(ZoneInfo("America/Los_Angeles"))
+                                            if parsed.tzinfo
+                                            else parsed.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Los_Angeles"))
                                         )
-                                        if parsed.tzinfo
-                                        else parsed.replace(
-                                            tzinfo=timezone.utc
-                                        ).astimezone(ZoneInfo("America/Los_Angeles"))
-                                    )
-                                    if (
-                                        local_key
-                                        and parsed_local.strftime("%Y-%m-%d %H:%M")
-                                        == local_key
-                                    ):
-                                        # skip this slot (remove reservation)
-                                        continue
-                                except Exception:
-                                    # keep unknown entries
-                                    pass
-                                new_taken.append(ts)
-                            try:
-                                inventory_ref.update(
-                                    {
-                                        "taken_slots": new_taken,
-                                        "last_updated": firestore.SERVER_TIMESTAMP,
-                                    }
-                                )
-                            except Exception:
-                                inventory_ref.set(
-                                    {"taken_slots": new_taken}, merge=True
-                                )
-                        else:
-                            # Fallback to legacy 'slots' dict update
-                            slots_data = inv_data.get("slots", {})
-                            if isinstance(slots_data, dict) and time_str in slots_data:
-                                slots_data[time_str]["taken"] = max(
-                                    0, slots_data[time_str].get("taken", 0) - party_size
-                                )
+                                        parsed_key = parsed_local.strftime("%Y-%m-%d %H:%M")
+                                        if any(parsed_key == needed_key for _, needed_key in needed_keys):
+                                            # skip this slot (remove reservation)
+                                            continue
+                                    except Exception:
+                                        # keep unknown entries
+                                        pass
+                                    new_taken.append(ts)
+                                
                                 try:
-                                    inventory_ref.update(
-                                        {
-                                            "slots": slots_data,
-                                            "last_updated": firestore.SERVER_TIMESTAMP,
-                                        }
-                                    )
+                                    inv_doc_ref.update({
+                                        "taken_slots": new_taken,
+                                        "last_updated": firestore.SERVER_TIMESTAMP
+                                    })
                                 except Exception:
-                                    inventory_ref.set({"slots": slots_data}, merge=True)
+                                    inv_doc_ref.set({"taken_slots": new_taken}, merge=True)
+                            
+                            # Revert legacy 'slots' dict if it exists
+                            slots_data = inv_data.get("slots", {})
+                            if isinstance(slots_data, dict) and slots_data:
+                                updated_slots = False
+                                for h_str, _ in needed_keys:
+                                    if h_str in slots_data:
+                                        slots_data[h_str]["taken"] = max(0, slots_data[h_str].get("taken", 0) - party_size)
+                                        updated_slots = True
+                                if updated_slots:
+                                    try:
+                                        inv_doc_ref.update({
+                                            "slots": slots_data,
+                                            "last_updated": firestore.SERVER_TIMESTAMP
+                                        })
+                                    except Exception:
+                                        inv_doc_ref.set({"slots": slots_data}, merge=True)
                 except Exception as inv_err:
                     logging.exception(
-                        "Failed to revert inventory for %s %s: %s",
-                        date_str,
-                        time_str,
+                        "Failed to revert inventory during rollback for booking %s: %s",
+                        booking_id,
                         inv_err,
                     )
             except Exception as rb_err:
@@ -1875,8 +1991,9 @@ def handle_booking(request):
                     "Rollback encountered error for booking %s: %s", booking_id, rb_err
                 )
 
+            error_message = "Failed to generate QuickBooks invoice. Please try again or contact support." if qbo_failed else "Failed to process payload."
             return (
-                {"status": "error", "message": "Failed to process payload."},
+                {"status": "error", "message": error_message},
                 500,
                 headers,
             )
@@ -2260,10 +2377,26 @@ def qbo_webhook(request):
 
                         for doc in query:
                             booking_data = doc.to_dict() or {}
-                            if booking_data.get("payment_status") != "PAID":
-                                doc.reference.update({"payment_status": "PAID"})
-                                booking_data["payment_status"] = "PAID"
-                                send_booking_receipt_email(doc.id, booking_data)
+                            payment_status = booking_data.get("payment_status")
+                            receipt_sent = booking_data.get("receipt_sent", False)
+                            if payment_status != "PAID" or not receipt_sent:
+                                success = False
+                                try:
+                                    # Use PAID in the formatted receipt email
+                                    email_data = dict(booking_data)
+                                    email_data["payment_status"] = "PAID"
+                                    success = send_booking_receipt_email(doc.id, email_data)
+                                except Exception as receipt_err:
+                                    logging.exception(
+                                        "Error sending booking receipt email for booking %s: %s",
+                                        doc.id,
+                                        receipt_err,
+                                    )
+                                
+                                update_payload = {"receipt_sent": success}
+                                if payment_status != "PAID":
+                                    update_payload["payment_status"] = "PAID"
+                                doc.reference.update(update_payload)
 
         return ({"status": "success"}, 200)
 

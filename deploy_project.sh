@@ -23,6 +23,7 @@ NC='\033[0;0m' # No Color
 DEFAULT_PROJECT_ID="bodie-tours-prod"
 PROJECT_ID=""
 SKIP_SEEDING=false
+SKIP_TOKEN_CHECK=false
 FORWARD_ARGS=()
 
 # Show usage instructions
@@ -34,6 +35,7 @@ show_usage() {
   echo -e "  -h, --help            Show this help message and exit"
   echo -e "  -p, --project ID      Override the GCP Project ID (default: read from deploy_functions.sh or use bodie-tours-prod)"
   echo -e "  -s, --skip-seeding    Skip Firestore configuration and email template seeding"
+  echo -e "  -t, --skip-token-check Skip QuickBooks & M365 OAuth token check and refresh"
   echo ""
   echo -e "${BOLD}Function Targets:${NC}"
   echo -e "  Pass one or more specific Cloud Function names to deploy only those (default: deploy all):"
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -s|--skip-seeding)
       SKIP_SEEDING=true
+      shift
+      ;;
+    -t|--skip-token-check)
+      SKIP_TOKEN_CHECK=true
       shift
       ;;
     -*)
@@ -207,13 +213,29 @@ else
   ./deploy_functions.sh
 fi
 
+# 6. Check and Refresh OAuth Tokens / Perform Login Flow
+if [[ "$SKIP_TOKEN_CHECK" = "true" ]]; then
+  echo -e "\n${YELLOW}➡ Skipping Integration OAuth token check and refresh as requested.${NC}"
+else
+  echo -e "\n${BOLD}${CYAN}Step 5: Verifying & Refreshing Integration OAuth Tokens...${NC}"
+  export GOOGLE_CLOUD_PROJECT="$PROJECT_ID"
+  if "$PYTHON_EXEC" verify_integrations.py --tokens-only; then
+    echo -e "${GREEN}✔ Integration OAuth tokens successfully verified and refreshed!${NC}"
+  else
+    echo -e "${RED}✘ Error: Integration OAuth token verification or refresh failed.${NC}" >&2
+    echo -e "If initial authorization is required, please complete the login flow via the launched browser.${NC}" >&2
+    exit 1
+  fi
+fi
+
 echo -e "\n${BLUE}===================================================================${NC}"
 echo -e "${BOLD}${GREEN}        END-TO-END DEPLOYMENT COMPLETED SUCCESSFULLY!${NC}"
 echo -e "${BLUE}===================================================================${NC}"
 echo -e "Your Bodie State Park booking system has been fully configured and updated:"
 echo -e " 1. ${GREEN}Firestore Seeding:${NC} Email templates & 5 official Tour configurations uploaded."
 echo -e " 2. ${GREEN}Cloud Functions:${NC} Functions deployed successfully to GCP project '${BOLD}$PROJECT_ID${NC}'."
-echo -e " 3. ${GREEN}Monitoring:${NC} Logs available in ${BOLD}deploy.log${NC}."
+echo -e " 3. ${GREEN}Integration OAuth Tokens:${NC} Tokens verified, refreshed, and authorized in Firestore."
+echo -e " 4. ${GREEN}Monitoring:${NC} Logs available in ${BOLD}deploy.log${NC}."
 echo ""
 echo -e "For subsequent manual verification or local testing, you can execute:"
 echo -e "  - ${CYAN}./run_verification.sh${NC} (runs Puppeteer automated visual audits and saves screenshots)"

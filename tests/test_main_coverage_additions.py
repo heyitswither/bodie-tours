@@ -756,7 +756,7 @@ def test_tc_m25_handle_booking_rollback_success(
 
     response, status_code, resp_headers = main.handle_booking(req)
     assert status_code == 500
-    assert response["message"] == "Failed to process payload."
+    assert response["message"] == "Failed to generate QuickBooks invoice. Please try again or contact support."
 
     # Check that bookings doc is deleted
     mock_booking_doc.delete.assert_called_once()
@@ -802,7 +802,7 @@ def test_tc_m25_handle_booking_rollback_fails(
 
     response, status_code, resp_headers = main.handle_booking(req)
     assert status_code == 500
-    assert response["message"] == "Failed to process payload."
+    assert response["message"] == "Failed to generate QuickBooks invoice. Please try again or contact support."
 
 
 @patch("main.db")

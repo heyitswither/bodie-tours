@@ -254,7 +254,7 @@ def test_calculate_ttl_cases():
 
     # Case 4: Lead time < 1 day -> 1 hour
     tour_dt = datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
-    assert prune_unpaid_slots.calculate_ttl(created_at, tour_dt) == timedelta(hours=1)
+    assert prune_unpaid_slots.calculate_ttl(created_at, tour_dt) == timedelta(hours=1, minutes=15)
 
 
 # ===========================================================================

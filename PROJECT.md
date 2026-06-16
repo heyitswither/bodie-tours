@@ -27,7 +27,7 @@ The Bodie State Park Booking System is a serverless backend integration that man
 - `tests/` – Python unit, integration, and E2E test suites with mock Firestore layers
 
 ## Documentation
-- [Master Technical Documentation](file:///home/freya/bodie-tours/MASTER_DOCUMENTATION.md) – Fully consolidated system specifications, schemas, security remediations, and guides
-- [Walkthrough & Deployment Guide](file:///home/freya/bodie-tours/walkthrough.md) – Step-by-step setup, OAuth configuration, and verification notes
-- [Security Review Report](file:///home/freya/bodie-tours/SECURITY-REVIEW.md) – Log of remediated high-confidence vulnerabilities
-- [System Handoff Report](file:///home/freya/bodie-tours/handoff.md) – Production transition checklist and feature outcomes
+- [Master Technical Documentation](MASTER_DOCUMENTATION.md) – Fully consolidated system specifications, schemas, security remediations, and guides
+- [Walkthrough & Deployment Guide](walkthrough.md) – Step-by-step setup, OAuth configuration, and verification notes
+- [Security Review Report](SECURITY-REVIEW.md) – Log of remediated high-confidence vulnerabilities
+- [System Handoff Report](handoff.md) – Production transition checklist and feature outcomes

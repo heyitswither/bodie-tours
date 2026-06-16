@@ -28,7 +28,7 @@ class TestCalculateTTL(unittest.TestCase):
         created = datetime(2023, 1, 1, tzinfo=timezone.utc)
         tour = created + timedelta(hours=12)
         ttl = calculate_ttl(created, tour)
-        self.assertEqual(ttl, timedelta(hours=1))
+        self.assertEqual(ttl, timedelta(hours=1, minutes=15))
 
 
 if __name__ == "__main__":

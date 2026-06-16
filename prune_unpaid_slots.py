@@ -260,7 +260,7 @@ def calculate_ttl(created_at, tour_datetime):
     - Lead time >= 7 days  → TTL = 48 hours
     - Lead time >= 2 days  → TTL = 24 hours
     - Lead time >= 1 day   → TTL = 3 hours
-    - Lead time < 1 day    → TTL = 1 hour
+    - Lead time < 1 day    → TTL = 1 hour 15 minutes (with 15-min grace window)
     """
     lead_time = tour_datetime - created_at
     if lead_time >= timedelta(days=7):
@@ -270,7 +270,7 @@ def calculate_ttl(created_at, tour_datetime):
     elif lead_time >= timedelta(days=1):
         return timedelta(hours=3)
     else:
-        return timedelta(hours=1)
+        return timedelta(hours=1, minutes=15)
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +387,7 @@ def process_cancellation_transaction(
         start_utc = tour_datetime
 
     if start_utc.tzinfo is None:
-        start_utc = start_utc.replace(tzinfo=timezone.utc)
+        start_utc = start_utc.replace(tzinfo=local_tz)
 
     # Calculate all consecutive UTC slots to release
     consecutive_slots_utc = [start_utc + timedelta(hours=i) for i in range(duration_hours)]
@@ -578,18 +578,35 @@ def prune_unpaid_slots(request):
                 if isinstance(tour_datetime, str):
                     tour_datetime = datetime.fromisoformat(tour_datetime)
                 if tour_datetime.tzinfo is None:
-                    tour_datetime = tour_datetime.replace(tzinfo=timezone.utc)
+                    tour_datetime = tour_datetime.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
             except (ValueError, TypeError):
                 continue
 
+            if isinstance(created_at, str):
+                try:
+                    created_at = datetime.fromisoformat(created_at)
+                except ValueError:
+                    pass
+            if hasattr(created_at, "to_datetime"):
+                created_at = created_at.to_datetime()
             if not hasattr(created_at, "tzinfo"):
                 continue
             if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
+                created_at = created_at.replace(tzinfo=ZoneInfo("America/Los_Angeles"))
 
             # Compute TTL based on lead time
             ttl = calculate_ttl(created_at, tour_datetime)
             booking_age = now - created_at
+
+            # For tight lead times (<1 day), set reminder_sent to 2 to bypass spam
+            lead_time = tour_datetime - created_at
+            if lead_time < timedelta(days=1):
+                if data.get("reminder_sent", 0) != 2:
+                    try:
+                        doc.reference.update({"reminder_sent": 2})
+                        data["reminder_sent"] = 2
+                    except Exception as exc:
+                        logger.exception("Failed to update reminder_sent to 2 for tight lead time: %s", exc)
 
             # Send a reminder email when booking age exceeds half of the TTL window (1st) or quarter TTL remaining (2nd)
             half_ttl = ttl / 2

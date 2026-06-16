@@ -4,7 +4,7 @@ This document details the step‑by‑step verification results for the booking 
 
 ## E2E Scenario Verification Results
 
-All five key scenarios have been interactively verified in Chrome via Puppeteer. Visual evidence, console logs, and network traces have been successfully captured and are located in the [screenshots/](file:///home/freya/bodie-tours/screenshots/) directory.
+All five key scenarios have been interactively verified in Chrome via Puppeteer. Visual evidence, console logs, and network traces have been successfully captured and are located in the [screenshots/](screenshots/) directory.
 
 ### Responsive Layout & Container Sizing Expansion
 
@@ -19,41 +19,41 @@ To allow the booking widget to seamlessly occupy the full available width of its
 - **Status**: Verified Successfully
 - **Description**: Select available date -> select open time slot -> fill out contact details -> submit.
 - **Verification**: Redirection to QuickBooks Online (QBO) invoice link loaded, M365 event created, and booking ID generated.
-- **Screenshot**: ![happy_path](file:///home/freya/bodie-tours/screenshots/happy_path.png)
-- **Console Log**: [happy_path_console.log](file:///home/freya/bodie-tours/screenshots/happy_path_console.log)
-- **Network Trace**: [happy_path_network.json](file:///home/freya/bodie-tours/screenshots/happy_path_network.json)
+- **Screenshot**: ![happy_path](screenshots/happy_path.png)
+- **Console Log**: [happy_path_console.log](screenshots/happy_path_console.log)
+- **Network Trace**: [happy_path_network.json](screenshots/happy_path_network.json)
 
 ### Scenario 2: Sold‑out Slot Handling
 - **Status**: Verified Successfully
 - **Description**: Click on a date/slot that is marked as SOLD_OUT.
 - **Verification**: Clicks are disabled, slot displays "Sold Out", and progression to the next step is blocked.
-- **Screenshot**: ![sold_out](file:///home/freya/bodie-tours/screenshots/sold_out.png)
-- **Console Log**: [sold_out_console.log](file:///home/freya/bodie-tours/screenshots/sold_out_console.log)
-- **Network Trace**: [sold_out_network.json](file:///home/freya/bodie-tours/screenshots/sold_out_network.json)
+- **Screenshot**: ![sold_out](screenshots/sold_out.png)
+- **Console Log**: [sold_out_console.log](screenshots/sold_out_console.log)
+- **Network Trace**: [sold_out_network.json](screenshots/sold_out_network.json)
 
 ### Scenario 3: Empty Month with No Availability
 - **Status**: Verified Successfully
 - **Description**: Navigate to a month with no guide scheduling blocks.
 - **Verification**: Widget loads gracefully and renders all days as unavailable without any console errors.
-- **Screenshot**: ![empty_month](file:///home/freya/bodie-tours/screenshots/empty_month.png)
-- **Console Log**: [empty_month_console.log](file:///home/freya/bodie-tours/screenshots/empty_month_console.log)
-- **Network Trace**: [empty_month_network.json](file:///home/freya/bodie-tours/screenshots/empty_month_network.json)
+- **Screenshot**: ![empty_month](screenshots/empty_month.png)
+- **Console Log**: [empty_month_console.log](screenshots/empty_month_console.log)
+- **Network Trace**: [empty_month_network.json](screenshots/empty_month_network.json)
 
 ### Scenario 4: Form Validation Failures
 - **Status**: Verified Successfully
 - **Description**: Submit booking form with invalid email formats or party sizes out of bounds (e.g. 25).
 - **Verification**: Submission is blocked, and clear inline validation errors are displayed to the user.
-- **Screenshot**: ![validation_failure](file:///home/freya/bodie-tours/screenshots/validation_failure.png)
-- **Console Log**: [validation_failure_console.log](file:///home/freya/bodie-tours/screenshots/validation_failure_console.log)
-- **Network Trace**: [validation_failure_network.json](file:///home/freya/bodie-tours/screenshots/validation_failure_network.json)
+- **Screenshot**: ![validation_failure](screenshots/validation_failure.png)
+- **Console Log**: [validation_failure_console.log](screenshots/validation_failure_console.log)
+- **Network Trace**: [validation_failure_network.json](screenshots/validation_failure_network.json)
 
 ### Scenario 5: Backend Error Simulation
 - **Status**: Verified Successfully
 - **Description**: Trigger a 409 conflict or 500 error from the backend.
 - **Verification**: Frontend catches the API error status and displays a user-friendly error banner: "Booking conflict: The requested time slot is already taken."
-- **Screenshot**: ![backend_error](file:///home/freya/bodie-tours/screenshots/backend_error.png)
-- **Console Log**: [backend_error_console.log](file:///home/freya/bodie-tours/screenshots/backend_error_console.log)
-- **Network Trace**: [backend_error_network.json](file:///home/freya/bodie-tours/screenshots/backend_error_network.json)
+- **Screenshot**: ![backend_error](screenshots/backend_error.png)
+- **Console Log**: [backend_error_console.log](screenshots/backend_error_console.log)
+- **Network Trace**: [backend_error_network.json](screenshots/backend_error_network.json)
 
 ---
 

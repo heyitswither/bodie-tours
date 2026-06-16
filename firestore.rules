@@ -13,5 +13,19 @@ service cloud.firestore {
       allow read: if true;
       allow write: if false;
     }
+
+    // 3. Configurations: Explicitly lock down config and email template collections
+    match /config/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /email_templates/{document=**} {
+      allow read, write: if false;
+    }
+
+    // 4. Global Fallback: Catch-all deny block
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

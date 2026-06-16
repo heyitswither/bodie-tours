@@ -29,7 +29,7 @@ The Bodie State Park serverless booking system is fully hardened against securit
      - **Empty Month**: Navigating to months with no guides shows unavailable status gracefully.
      - **Validation Failures**: Invalid emails and large party sizes correctly display frontend errors.
      - **Backend Error**: Simulation of a 409 conflict renders the expected conflict error message.
-   - All visual assets, logs, and traces are saved in [screenshots/](file:///home/freya/bodie-tours/screenshots/).
+   - All visual assets, logs, and traces are saved in [screenshots/](screenshots/).
 
 4. **Email Templates & Seeding Bug Resolution**:
    - Updated `templates/payment_reminder.html` to align with the forest green branding colors (`#1e3f20`, `#0a1f0d`).
@@ -46,7 +46,7 @@ The Bodie State Park serverless booking system is fully hardened against securit
    - Updated the API query paths in `booking_widget.html` and the mock mappings in `dev_server.py`/`mock_availability.json` to route availability requests through the `bodie-tours` database path.
 
 ## Deployment & Final Readiness
-- Setup, OAuth setup callbacks, database layout, and Google Cloud Functions configuration instructions are fully documented in the [Walkthrough & Deployment Guide](file:///home/freya/bodie-tours/walkthrough.md).
+- Setup, OAuth setup callbacks, database layout, and Google Cloud Functions configuration instructions are fully documented in the [Walkthrough & Deployment Guide](walkthrough.md).
 - Cleaned up all temporary files, scratch scripts, and local logs from the workspace to package the project cleanly.
 
 <!-- GOAL_COMPLETE -->

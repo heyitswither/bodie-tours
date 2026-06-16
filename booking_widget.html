@@ -210,6 +210,18 @@
     padding: 0;
   }
 
+  .bb-day::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 44px;
+    height: 44px;
+    min-width: 100%;
+    min-height: 100%;
+  }
+
   .bb-day:hover:not(.unavailable):not(.selected) {
     background: var(--accent-light);
     color: var(--accent-copper);
@@ -924,7 +936,7 @@
       <span id="bb-error-message">Please fill out all required fields correctly before continuing.</span>
     </div>
 
-    <form id="bb-booking-form" onsubmit="event.preventDefault(); bbSubmitBooking();">
+    <form id="bb-booking-form" novalidate onsubmit="event.preventDefault(); bbSubmitBooking();">
       <div class="bb-form-group">
         <label class="bb-label" for="guest-name">Full Name (Required)</label>
         <input class="bb-input" id="guest-name" required placeholder="e.g., Jane Doe" type="text" autocomplete="name">
@@ -937,7 +949,7 @@
 
       <div class="bb-form-group">
         <label class="bb-label" for="guest-phone">Phone Number (Required)</label>
-        <input class="bb-input" id="guest-phone" required placeholder="e.g., (555) 555-0199" type="tel" autocomplete="tel" pattern="\(\d{3}\) \d{3}-\d{4}" title="Please enter a valid 10-digit phone number in the format (555) 555-5555">
+        <input class="bb-input" id="guest-phone" required placeholder="e.g., (555) 555-0199" type="tel" autocomplete="tel" pattern="^\+?[0-9\s\-()]{7,20}$" title="Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192">
       </div>
 
       <div class="bb-form-group">
@@ -1004,6 +1016,12 @@
       <div class="bb-info-box info">
         <span class="bb-info-box-icon">ℹ️</span>
         <span>Your spot is temporarily held! Please complete your payment shortly to secure your booking. Unpaid holds are automatically released after 48 hours to open up the slot for other visitors.</span>
+      </div>
+
+      <div style="text-align: center; margin-top: 32px;">
+        <button class="bb-btn bb-btn-secondary" style="border-color: #1e3f20; color: #1e3f20; font-weight: 600;" onclick="bbStartOver()">
+          🔄 Book Another Tour
+        </button>
       </div>
     </div>
   </div>
@@ -1078,8 +1096,81 @@
     selectedDate: null,   
     selectedTime: null,   
     availableDates: {},
-    redirectTimeout: null
+    redirectTimeout: null,
+    redirectInterval: null,
+    calendarFetchFailed: false
   };
+
+  // Validation Helpers
+  function bbValidatePhone(phone) {
+    const cleanPhone = phone.replace(/\D/g, '');
+    const hasPlus = phone.trim().startsWith('+');
+    if (cleanPhone.length < 7 || cleanPhone.length > 15) {
+      return false;
+    }
+    const phoneRegex = /^\+?[0-9\s\-()]{7,20}$/;
+    return phoneRegex.test(phone.trim());
+  }
+
+  function bbIsFormValid() {
+    const form = document.getElementById('bb-booking-form');
+    if (!form) return false;
+    
+    const nameField = document.getElementById('guest-name');
+    const emailField = document.getElementById('guest-email');
+    const phoneField = document.getElementById('guest-phone');
+    const partyField = document.getElementById('guest-party');
+    const ackField = document.getElementById('mines-vehicle-ack');
+    
+    if (nameField && nameField.value.trim() === '') return false;
+    
+    if (emailField) {
+      const emailPattern = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailPattern.test(emailField.value.trim())) return false;
+    }
+    
+    if (phoneField && !bbValidatePhone(phoneField.value)) return false;
+    
+    if (partyField) {
+      const partySize = parseInt(partyField.value, 10);
+      const tourKey = bbState.selectedTour;
+      const maxLimit = tourKey ? (TOURS[tourKey].maxParty || 20) : 20;
+      if (isNaN(partySize) || partySize < 1 || partySize > maxLimit) return false;
+    }
+    
+    if (ackField && ackField.required && !ackField.checked) return false;
+    
+    return true;
+  }
+
+  // Trusted redirection validator
+  function isTrustedRedirectUrl(urlStr) {
+    try {
+      const url = new URL(urlStr);
+      const hostname = url.hostname.toLowerCase();
+      return hostname === 'intuit.com' || hostname.endsWith('.intuit.com');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Timeout-wrapped Fetch helper
+  async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 10000 } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(id);
+      return response;
+    } catch (err) {
+      clearTimeout(id);
+      throw err;
+    }
+  }
 
   // Initialize Widget
   async function bbInit() {
@@ -1130,8 +1221,18 @@
       phoneInput.addEventListener('input', function(e) {
         let cursorPosition = this.selectionStart;
         let originalLen = this.value.length;
+        let val = this.value;
 
-        let rawDigits = this.value.replace(/\D/g, '');
+        // Support international formats (leading '+' and length 7-15)
+        let rawDigits = val.replace(/\D/g, '');
+        let hasPlus = val.startsWith('+');
+        if (hasPlus || rawDigits.length > 10) {
+          if (!hasPlus && rawDigits.length > 10) {
+            // If they typed more than 10 digits without a plus, strip formatting chars so they get clean digits
+            this.value = rawDigits;
+          }
+          return;
+        }
         
         // If it starts with 1 and length > 10, assume country code and strip it
         if (rawDigits.startsWith('1') && rawDigits.length > 10) {
@@ -1199,8 +1300,8 @@
           errMsg.textContent = `The number of guests must be between 1 and ${maxLimit}.`;
         } else if (document.getElementById('mines-vehicle-ack') && document.getElementById('mines-vehicle-ack').validity.valueMissing) {
           errMsg.textContent = 'Please confirm that your group will provide a high-clearance, 4-wheel drive vehicle.';
-        } else if (phoneField && (phoneField.validity.patternMismatch || phoneField.validity.valueMissing || phoneField.value.replace(/\D/g, '').length !== 10)) {
-          errMsg.textContent = 'Please enter a valid 10-digit phone number, e.g., (555) 555-5555.';
+        } else if (phoneField && (phoneField.validity.patternMismatch || phoneField.validity.valueMissing || !bbValidatePhone(phoneField.value))) {
+          errMsg.textContent = 'Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192.';
         } else if (emailField && (emailField.validity.typeMismatch || emailField.validity.patternMismatch || emailField.validity.valueMissing)) {
           errMsg.textContent = 'Please enter a valid email address, e.g., jane.doe@example.com.';
         } else if (nameField && nameField.validity.valueMissing) {
@@ -1210,7 +1311,35 @@
         }
         errBox.style.display = 'flex';
       }, true);
+
+      // Reactive form error box clearing on correct input
+      form.addEventListener('input', function() {
+        const errBox = document.getElementById('bb-error-box');
+        if (errBox && errBox.style.display !== 'none' && bbIsFormValid()) {
+          errBox.style.display = 'none';
+        }
+      });
+      form.addEventListener('change', function() {
+        const errBox = document.getElementById('bb-error-box');
+        if (errBox && errBox.style.display !== 'none' && bbIsFormValid()) {
+          errBox.style.display = 'none';
+        }
+      });
+
       form.dataset.listenerAttached = 'true';
+    }
+
+    // Manual payment click listener to prevent double-redirects (R-01)
+    const invoiceLink = document.getElementById('bb-invoice-link');
+    if (invoiceLink && !invoiceLink.dataset.listenerAttached) {
+      invoiceLink.addEventListener('click', function() {
+        bbClearTimers();
+        const countdownEl = document.getElementById('bb-redirect-countdown');
+        if (countdownEl) {
+          countdownEl.innerHTML = "Automatic redirection paused. Please proceed with the payment in your opened tab.";
+        }
+      });
+      invoiceLink.dataset.listenerAttached = 'true';
     }
   }
 
@@ -1241,7 +1370,8 @@
     const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}&duration=${duration}`;
 
     try {
-      const res = await fetch(url);
+      bbState.calendarFetchFailed = false;
+      const res = await fetchWithTimeout(url, { timeout: 10000 });
       if (!res.ok) throw new Error("Could not load calendar availability.");
       const data = await res.json();
 
@@ -1262,6 +1392,7 @@
       });
     } catch (err) {
       console.error("Availability error:", err);
+      bbState.calendarFetchFailed = true;
     } finally {
       bbHideLoading();
     }
@@ -1326,6 +1457,29 @@
     document.getElementById('bb-month-label').textContent = `${monthNames[currentMonth]} ${currentYear}`;
     const grid = document.getElementById('bb-calendar-grid');
     grid.innerHTML = '';
+
+    if (bbState.calendarFetchFailed) {
+      const errorContainer = document.createElement('div');
+      errorContainer.style.gridColumn = '1 / -1';
+      errorContainer.style.padding = '24px 16px';
+      errorContainer.style.textAlign = 'center';
+      errorContainer.style.background = 'var(--error-light)';
+      errorContainer.style.border = '1px solid rgba(184, 76, 76, 0.2)';
+      errorContainer.style.borderRadius = '8px';
+      errorContainer.style.margin = '10px 0';
+      errorContainer.style.color = 'var(--error-terracotta)';
+      
+      errorContainer.innerHTML = `
+        <p style="margin: 0 0 12px 0; font-weight: 500; color: var(--error-terracotta);">
+          ⚠️ Failed to load available dates. Please check your connection and try again.
+        </p>
+        <button type="button" class="bb-btn bb-btn-primary" style="padding: 8px 20px; font-size: 0.9rem; max-width: 150px; margin: 0 auto; display: block;" onclick="bbRetryCalendarFetch()">
+          🔄 Retry
+        </button>
+      `;
+      grid.appendChild(errorContainer);
+      return;
+    }
 
     // Create the header row
     const headerRow = document.createElement('div');
@@ -1541,9 +1695,8 @@
       return;
     }
 
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (cleanPhone.length !== 10) {
-      errMsg.textContent = 'Please enter a valid 10-digit phone number, e.g., (555) 555-5555.';
+    if (!bbValidatePhone(phone)) {
+      errMsg.textContent = 'Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192.';
       errBox.style.display = 'flex';
       return;
     }
@@ -1664,7 +1817,7 @@
       // Fetch CSRF Token first (Double-Submit Cookie protection)
       let csrfToken = '';
       try {
-        const csrfResponse = await fetch(BOOKING_API, { method: 'GET', credentials: 'include' });
+        const csrfResponse = await fetchWithTimeout(BOOKING_API, { method: 'GET', credentials: 'include', timeout: 10000 });
         if (csrfResponse.ok) {
           const csrfData = await csrfResponse.json();
           csrfToken = csrfData.csrf_token;
@@ -1673,14 +1826,15 @@
         console.warn("Could not retrieve CSRF token:", csrfErr);
       }
 
-      const response = await fetch(BOOKING_API, {
+      const response = await fetchWithTimeout(BOOKING_API, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-CSRF-Token': csrfToken
         },
         credentials: 'include',
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        timeout: 10000
       });
 
       const result = await response.json();
@@ -1703,9 +1857,11 @@
         // Populate and display the invoice payment link
         const invoiceLink = document.getElementById('bb-invoice-link');
         const countdownEl = document.getElementById('bb-redirect-countdown');
-        if (invoiceLink && result.payment_link) {
+        if (invoiceLink && result.payment_link && isTrustedRedirectUrl(result.payment_link)) {
           invoiceLink.href = result.payment_link;
           invoiceLink.style.display = 'inline-flex';
+        } else if (invoiceLink) {
+          invoiceLink.style.display = 'none';
         }
 
         // Populate cancellation link
@@ -1720,8 +1876,13 @@
         if (paymentWindow) {
           try {
             if (!paymentWindow.closed) {
-              paymentWindow.location.href = result.payment_link;
-              openedInNewTab = true;
+              if (result.payment_link && isTrustedRedirectUrl(result.payment_link)) {
+                paymentWindow.location.href = result.payment_link;
+                openedInNewTab = true;
+              } else {
+                console.warn("Rejected untrusted redirect URL:", result.payment_link);
+                paymentWindow.close();
+              }
             }
           } catch (e) {
             console.warn("Failed to set payment window location:", e);
@@ -1733,30 +1894,9 @@
             countdownEl.innerHTML = `💳 Your invoice has been opened in a new tab. If it did not open, click <strong>Pay Your Invoice Now</strong> above.`;
           }
         } else {
-          // Fallback redirect in current tab after 5 seconds if popup was blocked/closed
-          if (result.payment_link) {
-            let count = 5;
-            if (countdownEl) {
-              countdownEl.textContent = `Redirecting to secure payment portal in ${count} seconds...`;
-            }
-            
-            bbState.redirectInterval = setInterval(() => {
-              count--;
-              if (countdownEl) {
-                if (count > 0) {
-                  countdownEl.textContent = `Redirecting to secure payment portal in ${count} seconds...`;
-                } else {
-                  countdownEl.textContent = "Redirecting now...";
-                  clearInterval(bbState.redirectInterval);
-                  bbState.redirectInterval = null;
-                }
-              }
-            }, 1000);
-
-            bbState.redirectTimeout = setTimeout(() => {
-              window.location.href = result.payment_link;
-              bbState.redirectTimeout = null;
-            }, 5000);
+          // Keep user on confirmation Step 4 rather than forcing a redirection of the main window (R-02)
+          if (countdownEl) {
+            countdownEl.innerHTML = `💳 Please click the <strong>Pay Your Invoice Now</strong> button above to complete your secure payment.`;
           }
         }
 
@@ -1901,6 +2041,51 @@
   }
 
   window.bbSelectTour = bbSelectTour;
+
+  async function bbRetryCalendarFetch() {
+    await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
+    bbRenderCalendar();
+  }
+  window.bbRetryCalendarFetch = bbRetryCalendarFetch;
+
+  function bbStartOver() {
+    bbClearTimers();
+    
+    bbState = {
+      selectedTour: null,
+      currentYear: new Date().getFullYear(),
+      currentMonth: new Date().getMonth(),
+      selectedDate: null,
+      selectedTime: null,
+      availableDates: {},
+      redirectTimeout: null,
+      redirectInterval: null,
+      calendarFetchFailed: false
+    };
+    
+    const form = document.getElementById('bb-booking-form');
+    if (form) {
+      form.reset();
+    }
+    
+    const errBox = document.getElementById('bb-error-box');
+    if (errBox) {
+      errBox.style.display = 'none';
+    }
+    
+    document.getElementById('bb-to-step-1').disabled = true;
+    document.getElementById('bb-to-step-2').disabled = true;
+    document.getElementById('bb-to-step-3').disabled = true;
+    
+    document.querySelectorAll('.bb-tour-card').forEach(card => {
+      card.classList.remove('selected');
+      card.setAttribute('aria-checked', 'false');
+      card.setAttribute('aria-pressed', 'false');
+    });
+    
+    bbGoTo(0);
+  }
+  window.bbStartOver = bbStartOver;
 
   function bbShowLoading(text) {
     const loading = document.getElementById('bb-loading');

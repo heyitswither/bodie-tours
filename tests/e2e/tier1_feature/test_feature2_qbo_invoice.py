@@ -148,7 +148,7 @@ def test_qbo_webhook_updates_status(client, mock_main_db):
     )
     assert response.status_code == 200
     # Check that update was called on the booking doc reference to set PAID
-    mock_booking_ref.update.assert_called_once_with({"payment_status": "PAID"})
+    mock_booking_ref.update.assert_called_once_with({"payment_status": "PAID", "receipt_sent": False})
 
 
 def test_qbo_webhook_signature_success(client, mock_main_db):
@@ -216,7 +216,7 @@ def test_qbo_webhook_signature_success(client, mock_main_db):
     )
 
     assert response.status_code == 200
-    mock_booking_ref.update.assert_called_once_with({"payment_status": "PAID"})
+    mock_booking_ref.update.assert_called_once_with({"payment_status": "PAID", "receipt_sent": False})
 
 
 def test_qbo_webhook_signature_invalid(client, mock_main_db):
