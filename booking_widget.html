@@ -1175,6 +1175,7 @@
   // Initialize Widget
   async function bbInit() {
     bbClearTimers();
+    pruneOldAvailabilityCache();
     bbSetupEventListeners();
     const now = new Date();
     bbState.currentYear = now.getFullYear();
@@ -1355,18 +1356,120 @@
     }
   }
 
+  // Process raw availability data into state structure
+  function _processAvailabilityData(data) {
+    const processed = {};
+    Object.entries(data.dates || {}).forEach(([docDate, doc]) => {
+      let slots = doc.slots || [];
+      if (!Array.isArray(slots) && typeof slots === 'object') {
+        slots = Object.entries(slots).map(([timeKey, slotVal]) => ({
+          time: timeKey,
+          status: slotVal.status
+        }));
+      }
+      if (Array.isArray(slots) && slots.length > 0) {
+        processed[docDate] = slots;
+      }
+    });
+    return processed;
+  }
+
+  // Clean up cache keys older than 24 hours
+  function pruneOldAvailabilityCache() {
+    try {
+      const now = Date.now();
+      const cutoff = 24 * 60 * 60 * 1000; // 24 hours in ms
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('ranger_availability_')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => {
+        try {
+          const raw = localStorage.getItem(key);
+          if (!raw) return;
+          const entry = JSON.parse(raw);
+          if (!entry || !entry.timestamp || (now - entry.timestamp > cutoff)) {
+            localStorage.removeItem(key);
+          }
+        } catch (e) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (err) {
+      console.error("Cache pruning failed:", err);
+    }
+  }
+
   // Fetch month availability from M365 endpoint
   async function bbFetchMonthAvailability(year, month) {
+    pruneOldAvailabilityCache();
+
+    const tourKey = bbState.selectedTour;
+    const duration = tourKey ? TOURS[tourKey].duration : 1;
+    const cacheKey = `ranger_availability_${year}_${month}_${duration}`;
+    const CACHE_TTL = 3600000; // 1 hour
+
+    let cached = null;
+    try {
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        cached = JSON.parse(raw);
+      }
+    } catch (e) {
+      console.error("Error reading cache:", e);
+    }
+
+    const now = Date.now();
+    if (cached && cached.timestamp && (now - cached.timestamp < CACHE_TTL)) {
+      // Synchronously populate the bbState.availableDates with the cached data
+      bbState.availableDates = _processAvailabilityData(cached.data);
+      bbState.calendarFetchFailed = false;
+
+      // In the background, fetch the latest availability from the API
+      setTimeout(async () => {
+        const startDayStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        const endDayStr = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
+        const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}&duration=${duration}`;
+
+        try {
+          const res = await fetchWithTimeout(url, { timeout: 10000 });
+          if (res.ok) {
+            const data = await res.json();
+            
+            // Update LocalStorage cache
+            const newEntry = {
+              timestamp: Date.now(),
+              data: data
+            };
+            localStorage.setItem(cacheKey, JSON.stringify(newEntry));
+
+            // Only update UI if the user is still on the same year, month, and duration
+            const currentTourKey = bbState.selectedTour;
+            const currentDuration = currentTourKey ? TOURS[currentTourKey].duration : 1;
+            if (year === bbState.currentYear && month === bbState.currentMonth && duration === currentDuration) {
+              bbState.availableDates = _processAvailabilityData(data);
+              bbRenderCalendar();
+            }
+          }
+        } catch (err) {
+          console.error("Background availability refresh error:", err);
+        }
+      }, 50);
+
+      // Bypass showing the loading spinner, returning immediately for rendering
+      return;
+    }
+
+    // Cached data is NOT available or expired
     bbShowLoading("Checking Ranger schedules...");
 
     const startDayStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endDayStr = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`;
-
-    const tourKey = bbState.selectedTour;
-    const duration = tourKey ? TOURS[tourKey].duration : 1;
-
-    // Construct M365 endpoint URL
     const url = `${M365_AVAILABILITY_API}?start=${startDayStr}&end=${endDayStr}&duration=${duration}`;
 
     try {
@@ -1375,21 +1478,14 @@
       if (!res.ok) throw new Error("Could not load calendar availability.");
       const data = await res.json();
 
-      bbState.availableDates = {};
+      // Store in LocalStorage with a current timestamp
+      const entry = {
+        timestamp: Date.now(),
+        data: data
+      };
+      localStorage.setItem(cacheKey, JSON.stringify(entry));
 
-      // data.dates is an object keyed by date strings
-      Object.entries(data.dates || {}).forEach(([docDate, doc]) => {
-        let slots = doc.slots || [];
-        if (!Array.isArray(slots) && typeof slots === 'object') {
-          slots = Object.entries(slots).map(([timeKey, slotVal]) => ({
-            time: timeKey,
-            status: slotVal.status
-          }));
-        }
-        if (Array.isArray(slots) && slots.length > 0) {
-          bbState.availableDates[docDate] = slots;
-        }
-      });
+      bbState.availableDates = _processAvailabilityData(data);
     } catch (err) {
       console.error("Availability error:", err);
       bbState.calendarFetchFailed = true;
