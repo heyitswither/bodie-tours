@@ -43,9 +43,9 @@ def find_available_date_and_slot(db):
     Ensures the public document is clean by deleting any existing one.
     Returns the date string (YYYY-MM-DD) and the slot time string "10:00".
     """
-    # Use tomorrow's date for testing
-    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).date()
-    date_str = tomorrow.isoformat()
+    # Use a date 9 days in advance for testing to satisfy the 7-day advance requirement
+    target_date = (datetime.now(timezone.utc) + timedelta(days=9)).date()
+    date_str = target_date.isoformat()
     # Delete any existing document for this date to avoid stale data
     try:
         db.collection("public").document(date_str).delete()
@@ -154,10 +154,25 @@ def main():
             db.collection("bookings").document(doc.id).delete()
     except Exception as e:
         print_warn(f"Failed to clean existing bookings: {e}")
+    # Fetch a CSRF token from the live GET endpoint
+    csrf_token = ""
+    try:
+        csrf_res = requests.get(
+            "https://us-west2-bodie-tours-prod.cloudfunctions.net/handle-booking",
+            timeout=10,
+        )
+        if csrf_res.ok:
+            csrf_token = csrf_res.json().get("csrf_token", "")
+            print_info(f"Retrieved CSRF token for integration testing: {csrf_token}")
+    except Exception as e:
+        print_warn(f"Failed to fetch CSRF token: {e}")
+
     booking_id = None
     for candidate in attempt_times:
         payload = dict(payload_template)
         payload["time"] = candidate
+        if csrf_token:
+            payload["csrf_token"] = csrf_token
         print_info(f"Sending booking payload: {payload}")
         try:
             res = requests.post(
@@ -166,10 +181,10 @@ def main():
                 timeout=20,
             )
             if res.status_code == 409:
-                print_warn(f"Booking conflict at {candidate}, trying next time.")
+                print_warn(f"Booking conflict at {candidate}. Response status: {res.status_code}. Response: {res.text}")
                 continue
             if not res.ok:
-                raise Exception(f"Booking request failed with status {res.status_code}")
+                raise Exception(f"Booking request failed with status {res.status_code}. Response: {res.text}")
             resp_json = res.json()
             booking_id = resp_json.get("booking_id")
             if not booking_id:

@@ -7,10 +7,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // 2. Public Inventory: Allow the Squarespace frontend to fetch availability,
-    // but block all client-side modifications.
+    // 2. Public Inventory: Allow the booking widget to fetch availability for individual dates,
+    // but block bulk collection listing queries (list) to prevent database harvesting/scraping.
     match /public/{date} {
-      allow read: if true;
+      allow get: if true;
+      allow list: if false;
       allow write: if false;
     }
 

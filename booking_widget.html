@@ -939,22 +939,22 @@
     <form id="bb-booking-form" novalidate onsubmit="event.preventDefault(); bbSubmitBooking();">
       <div class="bb-form-group">
         <label class="bb-label" for="guest-name">Full Name (Required)</label>
-        <input class="bb-input" id="guest-name" required placeholder="e.g., Jane Doe" type="text" autocomplete="name">
+        <input class="bb-input" id="guest-name" required placeholder="e.g., Jane Doe" type="text" autocomplete="name" maxlength="100">
       </div>
 
       <div class="bb-form-group">
         <label class="bb-label" for="guest-email">Email Address (Required)</label>
-        <input class="bb-input" id="guest-email" required placeholder="e.g., jane.doe@example.com" type="email" autocomplete="email" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address, e.g., jane.doe@example.com">
+        <input class="bb-input" id="guest-email" required placeholder="e.g., jane.doe@example.com" type="email" autocomplete="email" pattern="[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}" title="Please enter a valid email address, e.g., jane.doe@example.com" maxlength="100">
       </div>
 
       <div class="bb-form-group">
         <label class="bb-label" for="guest-phone">Phone Number (Required)</label>
-        <input class="bb-input" id="guest-phone" required placeholder="e.g., (555) 555-0199" type="tel" autocomplete="tel" pattern="^\+?[0-9\s\-()]{7,20}$" title="Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192">
+        <input class="bb-input" id="guest-phone" required placeholder="e.g., (555) 555-0199" type="tel" autocomplete="tel" pattern="^\+?[0-9\s\-()]{7,25}$" title="Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192" maxlength="25">
       </div>
 
       <div class="bb-form-group">
         <label class="bb-label" for="guest-party">Number of Guests (Required)</label>
-        <input class="bb-input" id="guest-party" required placeholder="4" type="number" min="1" max="20">
+        <input class="bb-input" id="guest-party" required placeholder="4" type="number" min="1" max="20" step="1">
       </div>
 
       <!-- Conditional Checkbox for Mines Driving Tour -->
@@ -1098,17 +1098,17 @@
     availableDates: {},
     redirectTimeout: null,
     redirectInterval: null,
-    calendarFetchFailed: false
+    calendarFetchFailed: false,
+    isSubmitting: false
   };
 
   // Validation Helpers
   function bbValidatePhone(phone) {
     const cleanPhone = phone.replace(/\D/g, '');
-    const hasPlus = phone.trim().startsWith('+');
     if (cleanPhone.length < 7 || cleanPhone.length > 15) {
       return false;
     }
-    const phoneRegex = /^\+?[0-9\s\-()]{7,20}$/;
+    const phoneRegex = /^\+?[0-9\s\-()]{7,25}$/;
     return phoneRegex.test(phone.trim());
   }
 
@@ -1181,6 +1181,12 @@
     bbState.currentYear = now.getFullYear();
     bbState.currentMonth = now.getMonth();
     
+    // Initialize tour card tabindex roving state
+    const cards = document.querySelectorAll('.bb-tour-card');
+    cards.forEach((card, index) => {
+      card.setAttribute('tabindex', index === 0 ? '0' : '-1');
+    });
+
     bbGoTo(0);
   }
 
@@ -1198,6 +1204,42 @@
       calendarGrid.dataset.listenerAttached = 'true';
     }
 
+    if (calendarGrid && !calendarGrid.dataset.keydownAttached) {
+      calendarGrid.addEventListener('keydown', function(event) {
+        const activeEl = document.activeElement;
+        if (!activeEl || !activeEl.classList.contains('bb-day') || activeEl.classList.contains('empty')) return;
+
+        const currentDay = parseInt(activeEl.getAttribute('data-day'), 10);
+        if (isNaN(currentDay)) return;
+
+        const daysInMonth = new Date(bbState.currentYear, bbState.currentMonth + 1, 0).getDate();
+        let targetDay = currentDay;
+
+        if (event.key === 'ArrowRight') {
+          targetDay = currentDay + 1;
+        } else if (event.key === 'ArrowLeft') {
+          targetDay = currentDay - 1;
+        } else if (event.key === 'ArrowDown') {
+          targetDay = currentDay + 7;
+        } else if (event.key === 'ArrowUp') {
+          targetDay = currentDay - 7;
+        } else {
+          return;
+        }
+
+        if (targetDay >= 1 && targetDay <= daysInMonth) {
+          event.preventDefault();
+          const targetBtn = calendarGrid.querySelector(`.bb-day[data-day="${targetDay}"]`);
+          if (targetBtn) {
+            calendarGrid.querySelectorAll('.bb-day').forEach(b => b.setAttribute('tabindex', '-1'));
+            targetBtn.setAttribute('tabindex', '0');
+            targetBtn.focus();
+          }
+        }
+      });
+      calendarGrid.dataset.keydownAttached = 'true';
+    }
+
     const slotsGrid = document.getElementById('bb-slots-grid');
     if (slotsGrid && !slotsGrid.dataset.listenerAttached) {
       slotsGrid.addEventListener('click', function(event) {
@@ -1211,10 +1253,77 @@
           slotBtn.classList.add('selected');
           slotBtn.setAttribute('aria-pressed', 'true');
           bbState.selectedTime = apiTime;
+          
+          const timeText = slotBtn.querySelector('.bb-slot-time') ? slotBtn.querySelector('.bb-slot-time').textContent : apiTime;
+          bbAnnounce(`Selected time slot: ${timeText}`);
+          
           document.getElementById('bb-to-step-3').disabled = false;
         }
       });
       slotsGrid.dataset.listenerAttached = 'true';
+    }
+
+    if (slotsGrid && !slotsGrid.dataset.keydownAttached) {
+      slotsGrid.addEventListener('keydown', function(event) {
+        const activeEl = document.activeElement;
+        if (!activeEl || !activeEl.classList.contains('bb-slot')) return;
+
+        const slots = Array.from(slotsGrid.querySelectorAll('.bb-slot'));
+        const index = slots.indexOf(activeEl);
+        if (index === -1) return;
+
+        let targetIndex = -1;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+          targetIndex = index + 1;
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+          targetIndex = index - 1;
+        } else {
+          return;
+        }
+
+        if (targetIndex >= 0 && targetIndex < slots.length) {
+          event.preventDefault();
+          const targetSlot = slots[targetIndex];
+          slots.forEach(s => s.setAttribute('tabindex', '-1'));
+          targetSlot.setAttribute('tabindex', '0');
+          targetSlot.focus();
+        }
+      });
+      slotsGrid.dataset.keydownAttached = 'true';
+    }
+
+    const cardsContainer = document.querySelector('.bb-tour-cards-container');
+    if (cardsContainer && !cardsContainer.dataset.listenerAttached) {
+      cardsContainer.addEventListener('keydown', function(event) {
+        const activeEl = document.activeElement;
+        if (!activeEl || !activeEl.classList.contains('bb-tour-card')) return;
+
+        const cards = Array.from(cardsContainer.querySelectorAll('.bb-tour-card'));
+        const index = cards.indexOf(activeEl);
+        if (index === -1) return;
+
+        let targetIndex = -1;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+          targetIndex = (index + 1) % cards.length;
+        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+          targetIndex = (index - 1 + cards.length) % cards.length;
+        } else {
+          return;
+        }
+
+        if (targetIndex !== -1) {
+          event.preventDefault();
+          const targetCard = cards[targetIndex];
+          
+          cards.forEach(c => c.setAttribute('tabindex', '-1'));
+          targetCard.setAttribute('tabindex', '0');
+          targetCard.focus();
+          
+          const tourKey = targetCard.getAttribute('data-tour');
+          bbSelectTour(tourKey);
+        }
+      });
+      cardsContainer.dataset.listenerAttached = 'true';
     }
 
     const phoneInput = document.getElementById('guest-phone');
@@ -1274,7 +1383,13 @@
     
     // Listen for blur and input to sync aria-invalid
     document.addEventListener('blur', (e) => {
-      if (e.target.matches('.bb-input')) syncAria(e.target);
+      if (e.target.matches('.bb-input')) {
+        // Automatically trim whitespace on blur to handle copy-paste or accidental spacing gracefully
+        if (e.target.type !== 'password' && e.target.type !== 'checkbox') {
+          e.target.value = e.target.value.trim();
+        }
+        syncAria(e.target);
+      }
     }, true);
     document.addEventListener('input', (e) => {
       if (e.target.matches('.bb-input') && e.target.hasAttribute('aria-invalid')) {
@@ -1597,12 +1712,44 @@
     today.setHours(0, 0, 0, 0);
 
     const cells = [];
-
     for (let i = 0; i < firstDay; i++) {
       const blank = document.createElement('div');
       blank.className = 'bb-day empty';
       blank.setAttribute('role', 'gridcell');
       cells.push(blank);
+    }
+
+    // Determine target roving tabindex day (selected day, first available day, or 1st of the month)
+    let targetTabindexDay = 1;
+    let firstAvailableDay = null;
+    const oneWeekFromNow = new Date(today);
+    oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayDate = new Date(currentYear, currentMonth, d);
+      let isUnavailable = (dayDate < oneWeekFromNow || !bbState.availableDates[dateStr]);
+      if (bbState.selectedTour === 'twilight') {
+        const m = dayDate.getMonth();
+        if (m < 5 || m > 8) isUnavailable = true;
+      }
+      if (!isUnavailable && firstAvailableDay === null) {
+        firstAvailableDay = d;
+      }
+    }
+
+    if (bbState.selectedDate) {
+      const selParts = bbState.selectedDate.split('-');
+      const selYear = parseInt(selParts[0], 10);
+      const selMonth = parseInt(selParts[1], 10) - 1;
+      const selDay = parseInt(selParts[2], 10);
+      if (selYear === currentYear && selMonth === currentMonth) {
+        targetTabindexDay = selDay;
+      } else {
+        targetTabindexDay = firstAvailableDay !== null ? firstAvailableDay : 1;
+      }
+    } else {
+      targetTabindexDay = firstAvailableDay !== null ? firstAvailableDay : 1;
     }
 
     for (let d = 1; d <= daysInMonth; d++) {
@@ -1611,13 +1758,12 @@
       btn.textContent = d;
       btn.setAttribute('type', 'button');
       btn.setAttribute('role', 'gridcell');
+      btn.setAttribute('data-day', d);
       
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const dayDate = new Date(currentYear, currentMonth, d);
 
       const monthName = monthNames[currentMonth];
-      const oneWeekFromNow = new Date(today);
-      oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
       let isUnavailable = (dayDate < oneWeekFromNow || !bbState.availableDates[dateStr]);
 
       // Twilight Tour date-filtering check (only June through September)
@@ -1634,11 +1780,14 @@
       if (isUnavailable) {
         btn.classList.add('unavailable');
         btn.setAttribute('aria-disabled', 'true');
-        btn.setAttribute('disabled', 'true');
-        btn.setAttribute('tabindex', '-1');
       } else {
         btn.classList.add('available');
+      }
+
+      if (d === targetTabindexDay) {
         btn.setAttribute('tabindex', '0');
+      } else {
+        btn.setAttribute('tabindex', '-1');
       }
       
       btn.setAttribute('data-date', dateStr);
@@ -1646,8 +1795,10 @@
       if (bbState.selectedDate === dateStr) {
         btn.classList.add('selected');
         btn.setAttribute('aria-pressed', 'true');
+        btn.setAttribute('aria-selected', 'true');
       } else {
         btn.setAttribute('aria-pressed', 'false');
+        btn.setAttribute('aria-selected', 'false');
       }
       
       cells.push(btn);
@@ -1667,21 +1818,55 @@
       }
       grid.appendChild(row);
     }
+
+    // Disable previous month button if we are on the current month/year or in the past
+    const prevMonthBtn = document.querySelector('#bodie-booking-widget .bb-month-btn[aria-label="Previous month"]');
+    if (prevMonthBtn) {
+      const now = new Date();
+      const isCurrentMonthOrPast = (currentYear < now.getFullYear()) || (currentYear === now.getFullYear() && currentMonth <= now.getMonth());
+      if (isCurrentMonthOrPast) {
+        prevMonthBtn.disabled = true;
+        prevMonthBtn.style.opacity = '0.3';
+        prevMonthBtn.style.cursor = 'not-allowed';
+      } else {
+        prevMonthBtn.disabled = false;
+        prevMonthBtn.style.opacity = '1';
+        prevMonthBtn.style.cursor = 'pointer';
+      }
+    }
   }
 
   async function bbChangeMonth(delta) {
     bbClearTimers();
-    bbState.currentMonth += delta;
-    if (bbState.currentMonth < 0) {
-      bbState.currentMonth = 11;
-      bbState.currentYear--;
-    } else if (bbState.currentMonth > 11) {
-      bbState.currentMonth = 0;
-      bbState.currentYear++;
+    
+    const now = new Date();
+    const targetMonth = bbState.currentMonth + delta;
+    let targetYear = bbState.currentYear;
+    let adjustedMonth = targetMonth;
+    if (targetMonth < 0) {
+      adjustedMonth = 11;
+      targetYear--;
+    } else if (targetMonth > 11) {
+      adjustedMonth = 0;
+      targetYear++;
     }
+    
+    const isPast = (targetYear < now.getFullYear()) || (targetYear === now.getFullYear() && adjustedMonth < now.getMonth());
+    if (isPast) {
+      return;
+    }
+
+    bbState.currentMonth = adjustedMonth;
+    bbState.currentYear = targetYear;
     
     await bbFetchMonthAvailability(bbState.currentYear, bbState.currentMonth);
     bbRenderCalendar();
+
+    const monthNames = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ];
+    bbAnnounce(`Showing availability for ${monthNames[bbState.currentMonth]} ${bbState.currentYear}`);
   }
 
   function bbSelectDate(dateStr, element) {
@@ -1691,9 +1876,17 @@
     document.querySelectorAll('.bb-day').forEach(el => {
       el.classList.remove('selected');
       el.setAttribute('aria-pressed', 'false');
+      el.setAttribute('aria-selected', 'false');
     });
     element.classList.add('selected');
     element.setAttribute('aria-pressed', 'true');
+    element.setAttribute('aria-selected', 'true');
+    
+    const dateObj = new Date(dateStr + 'T12:00:00');
+    const displayDate = dateObj.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    });
+    bbAnnounce(`Selected date: ${displayDate}`);
     
     document.getElementById('bb-to-step-2').disabled = false;
   }
@@ -1736,7 +1929,28 @@
       return timeA.localeCompare(timeB);
     });
 
-    sortedSlots.forEach(slot => {
+    // Compute focusable slot index for roving tabindex
+    let focusableIndex = 0;
+    const selectedIndex = sortedSlots.findIndex(slot => {
+      const isObject = typeof slot === 'object' && slot !== null;
+      const slotStr = isObject ? slot.time : slot;
+      const { apiTime } = parseSlotKey(slotStr, dateStr);
+      return bbState.selectedTime === apiTime;
+    });
+
+    if (selectedIndex !== -1) {
+      focusableIndex = selectedIndex;
+    } else {
+      const firstAvailableIndex = sortedSlots.findIndex(slot => {
+        const isObject = typeof slot === 'object' && slot !== null;
+        return !(isObject && slot.status === 'SOLD_OUT');
+      });
+      if (firstAvailableIndex !== -1) {
+        focusableIndex = firstAvailableIndex;
+      }
+    }
+
+    sortedSlots.forEach((slot, index) => {
       const isObject = typeof slot === 'object' && slot !== null;
       const slotStr = isObject ? slot.time : slot;
       const isFull = isObject && slot.status === 'SOLD_OUT';
@@ -1748,7 +1962,7 @@
       if (isFull) {
         slotBtn.className = 'bb-slot full';
         slotBtn.setAttribute('aria-label', `${displayTime}, sold out`);
-        slotBtn.setAttribute('disabled', 'true');
+        slotBtn.setAttribute('aria-disabled', 'true');
         slotBtn.innerHTML = `
           <span class="bb-slot-time">${displayTime}</span>
           <span class="bb-slot-status">Sold Out</span>
@@ -1763,6 +1977,7 @@
       }
       
       slotBtn.setAttribute('data-time', apiTime);
+      slotBtn.setAttribute('tabindex', index === focusableIndex ? '0' : '-1');
       
       if (bbState.selectedTime === apiTime) {
         slotBtn.classList.add('selected');
@@ -1797,6 +2012,8 @@
   }
 
   async function bbSubmitBooking() {
+    if (bbState.isSubmitting) return;
+
     const name = document.getElementById('guest-name').value.trim();
     const email = document.getElementById('guest-email').value.trim();
     const phone = document.getElementById('guest-phone').value.trim();
@@ -1806,7 +2023,13 @@
 
     errBox.style.display = 'none';
 
-    if (!name || !email || !phone || !partySize) {
+    if (!bbState.selectedTour || !bbState.selectedDate || !bbState.selectedTime) {
+      errMsg.textContent = 'Please select a tour, date, and time slot before continuing.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    if (!name || !email || !phone || isNaN(partySize)) {
       errMsg.textContent = 'Please fill out all required fields.';
       errBox.style.display = 'flex';
       return;
@@ -1831,7 +2054,7 @@
     const tourPrice = tour ? tour.price : 25.00;
     const tourName = tour ? tour.name : 'Guided Tour';
 
-    if (partySize < 1 || partySize > maxLimit) {
+    if (isNaN(partySize) || partySize < 1 || partySize > maxLimit) {
       errMsg.textContent = `Party size must be between 1 and ${maxLimit}.`;
       errBox.style.display = 'flex';
       return;
@@ -1845,6 +2068,11 @@
         return;
       }
     }
+
+    // Set submit lock and disable the button
+    bbState.isSubmitting = true;
+    const confirmBtn = document.getElementById('bb-confirm-booking-btn');
+    if (confirmBtn) confirmBtn.disabled = true;
 
     // Open a blank tab synchronously in response to the user's gesture (avoid popup blockers)
     let paymentWindow = null;
@@ -2053,6 +2281,8 @@
       errMsg.textContent = 'Network or connection error. Please try again.';
       errBox.style.display = 'flex';
     } finally {
+      bbState.isSubmitting = false;
+      if (confirmBtn) confirmBtn.disabled = false;
       bbHideLoading();
     }
   }
@@ -2133,12 +2363,17 @@
         card.classList.add('selected');
         card.setAttribute('aria-checked', 'true');
         card.setAttribute('aria-pressed', 'true');
+        card.setAttribute('tabindex', '0');
       } else {
         card.classList.remove('selected');
         card.setAttribute('aria-checked', 'false');
         card.setAttribute('aria-pressed', 'false');
+        card.setAttribute('tabindex', '-1');
       }
     });
+
+    const tourName = TOURS[tourKey] ? TOURS[tourKey].name : 'Tour';
+    bbAnnounce(`Selected tour: ${tourName}`);
 
     document.getElementById('bb-to-step-1').disabled = false;
 

@@ -1988,41 +1988,20 @@ def handle_booking(request):
                 booking_id,
                 exc,
             )
-            # 7. Send immediate acknowledgment email via M365 about temporary issue (if any)
-            try:
-                m365_token, m365_user_id = get_m365_access_token()
-                guest_email = guest_data.get("email")
-                guest_name = guest_data.get("name", "Guest")
-                # Using existing reminder function to send a temporary issue email
-                send_outlook_reminder(
-                    m365_token,
-                    m365_user_id,
-                    guest_email,
-                    guest_name,
-                    f"Temporary issue with your booking for {date_str} {time_str}. We will retry and notify you soon.",
-                    booking_id,
-                    payment_link=None,
-                    party_size=party_size,
-                )
-            except Exception as email_err:
-                logging.exception(
-                    "Failed to send acknowledgment email for booking %s: %s",
-                    booking_id,
-                    email_err,
-                )
-
             # Attempt to rollback the partially created booking and inventory reservation
+            booking_deleted = False
             try:
                 # Delete booking document if it exists
-                try:
-                    db.collection("bookings").document(booking_id).delete()
-                except Exception as del_err:
-                    logging.exception(
-                        "Failed to delete booking %s during rollback: %s",
-                        booking_id,
-                        del_err,
-                    )
+                db.collection("bookings").document(booking_id).delete()
+                booking_deleted = True
+            except Exception as del_err:
+                logging.exception(
+                    "Failed to delete booking %s during rollback: %s",
+                    booking_id,
+                    del_err,
+                )
 
+            if booking_deleted:
                 # Revert inventory reservation completely across all dates and hours reserved
                 try:
                     consecutive_local_dts = [dt_local + timedelta(hours=i) for i in range(duration_hours)]
@@ -2094,10 +2073,31 @@ def handle_booking(request):
                         booking_id,
                         inv_err,
                     )
-            except Exception as rb_err:
-                logging.exception(
-                    "Rollback encountered error for booking %s: %s", booking_id, rb_err
-                )
+            else:
+                # If booking document deletion failed, the booking remains PENDING and the slot remains blocked.
+                # In this case, send the immediate acknowledgment email via M365 since retry_unpaid_bookings will retry it.
+                # 7. Send immediate acknowledgment email via M365 about temporary issue (if any)
+                try:
+                    m365_token, m365_user_id = get_m365_access_token()
+                    guest_email = guest_data.get("email")
+                    guest_name = guest_data.get("name", "Guest")
+                    # Using existing reminder function to send a temporary issue email
+                    send_outlook_reminder(
+                        m365_token,
+                        m365_user_id,
+                        guest_email,
+                        guest_name,
+                        f"Temporary issue with your booking for {date_str} {time_str}. We will retry and notify you soon.",
+                        booking_id,
+                        payment_link=None,
+                        party_size=party_size,
+                    )
+                except Exception as email_err:
+                    logging.exception(
+                        "Failed to send acknowledgment email for booking %s: %s",
+                        booking_id,
+                        email_err,
+                    )
 
             error_message = "Failed to generate QuickBooks invoice. Please try again or contact support." if qbo_failed else "Failed to process payload."
             return (
