@@ -67,7 +67,9 @@ def test_seed_templates_main_execution():
     ):
 
         # Run module as __main__
-        runpy.run_path("/home/freya/bodie-tours/seed_templates.py", run_name="__main__")
+        test_dir = os.path.dirname(os.path.abspath(__file__))
+        script_path = os.path.join(test_dir, "..", "backend", "seed_templates.py")
+        runpy.run_path(script_path, run_name="__main__")
 
         # Verify firestore Client was initialized
         mock_client.collection.assert_not_called()

@@ -1,4 +1,8 @@
 import sys
+import os
+# Add backend/ to the Python search path so tests can load modules directly
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend"))
+
 import types
 import pytest
 from unittest.mock import MagicMock, patch

@@ -2014,10 +2014,11 @@
   async function bbSubmitBooking() {
     if (bbState.isSubmitting) return;
 
-    const name = document.getElementById('guest-name').value.trim();
+    const name = document.getElementById('guest-name').value.trim().replace(/\s+/g, ' ');
     const email = document.getElementById('guest-email').value.trim();
     const phone = document.getElementById('guest-phone').value.trim();
-    const partySize = parseInt(document.getElementById('guest-party').value, 10);
+    const partyRaw = document.getElementById('guest-party').value.trim();
+    const partySize = parseInt(partyRaw, 10);
     const errBox = document.getElementById('bb-error-box');
     const errMsg = document.getElementById('bb-error-message');
 
@@ -2029,14 +2030,53 @@
       return;
     }
 
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!datePattern.test(bbState.selectedDate) || isNaN(Date.parse(bbState.selectedDate))) {
+      errMsg.textContent = 'Invalid date selected. Please select a valid date from the calendar.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (bbState.selectedDate < todayStr) {
+      errMsg.textContent = 'The selected date is in the past. Please select a current or future date.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    const timePattern = /^\d{2}:\d{2}(:\d{2})?$/;
+    if (!timePattern.test(bbState.selectedTime)) {
+      errMsg.textContent = 'Invalid time slot selected. Please select a valid time slot.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
     if (!name || !email || !phone || isNaN(partySize)) {
       errMsg.textContent = 'Please fill out all required fields.';
       errBox.style.display = 'flex';
       return;
     }
 
-    if (!bbValidatePhone(phone)) {
-      errMsg.textContent = 'Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192.';
+    if (name.length < 2) {
+      errMsg.textContent = 'Please enter a valid full name (at least 2 characters).';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    if (name.length > 100) {
+      errMsg.textContent = 'Name is too long (maximum 100 characters).';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    if (/<[^>]*>/g.test(name)) {
+      errMsg.textContent = 'Name contains invalid characters or HTML tags.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
+    if (email.length > 100) {
+      errMsg.textContent = 'Email address is too long (maximum 100 characters).';
       errBox.style.display = 'flex';
       return;
     }
@@ -2048,14 +2088,20 @@
       return;
     }
 
+    if (!bbValidatePhone(phone)) {
+      errMsg.textContent = 'Please enter a valid phone number (7 to 15 digits), e.g., (555) 555-5555 or +44 20 7946 0192.';
+      errBox.style.display = 'flex';
+      return;
+    }
+
     const tourKey = bbState.selectedTour;
     const tour = TOURS[tourKey];
     const maxLimit = tour ? tour.maxParty : 20;
     const tourPrice = tour ? tour.price : 25.00;
     const tourName = tour ? tour.name : 'Guided Tour';
 
-    if (isNaN(partySize) || partySize < 1 || partySize > maxLimit) {
-      errMsg.textContent = `Party size must be between 1 and ${maxLimit}.`;
+    if (!/^\d+$/.test(partyRaw) || isNaN(partySize) || partySize < 1 || partySize > maxLimit) {
+      errMsg.textContent = `Party size must be a whole number between 1 and ${maxLimit}.`;
       errBox.style.display = 'flex';
       return;
     }
@@ -2176,12 +2222,18 @@
       let recaptchaToken = '';
       if (recaptchaSiteKey) {
         try {
-          await loadRecaptchaScript(recaptchaSiteKey);
+          await Promise.race([
+            loadRecaptchaScript(recaptchaSiteKey),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("reCAPTCHA script load timeout")), 5000))
+          ]);
           if (typeof grecaptcha !== 'undefined') {
-            recaptchaToken = await grecaptcha.execute(recaptchaSiteKey, { action: 'submit_booking' });
+            recaptchaToken = await Promise.race([
+              grecaptcha.execute(recaptchaSiteKey, { action: 'submit_booking' }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("reCAPTCHA execution timeout")), 4000))
+            ]);
           }
         } catch (err) {
-          console.warn("reCAPTCHA execution failed, proceeding without token:", err);
+          console.warn("reCAPTCHA execution or load failed/timed out, proceeding without token:", err);
         }
       }
 
@@ -2198,7 +2250,14 @@
         timeout: 10000
       });
 
-      const result = await response.json();
+      let result = {};
+      let isJsonParsed = false;
+      try {
+        result = await response.json();
+        isJsonParsed = true;
+      } catch (jsonErr) {
+        console.warn("Could not parse response JSON:", jsonErr);
+      }
 
       if (response.ok && result.status === 'success') {
         const confirmEmail = document.getElementById('bb-confirm-email');
@@ -2268,7 +2327,21 @@
             paymentWindow.close();
           } catch (e) {}
         }
-        errMsg.textContent = result.message || 'The slot is no longer available. Please select another time.';
+        if (!response.ok) {
+          if (response.status === 400) {
+            errMsg.textContent = result.message || 'Validation error. Please check your inputs.';
+          } else if (response.status === 409) {
+            errMsg.textContent = result.message || 'The requested slot is already booked. Please choose another slot.';
+          } else if (response.status === 429) {
+            errMsg.textContent = 'Too many booking attempts. Please wait a moment and try again.';
+          } else if (response.status === 500) {
+            errMsg.textContent = 'A temporary server error occurred. Please try again shortly.';
+          } else {
+            errMsg.textContent = result.message || `Error: ${response.status}. Please try again.`;
+          }
+        } else {
+          errMsg.textContent = result.message || 'The slot is no longer available. Please select another time.';
+        }
         errBox.style.display = 'flex';
       }
     } catch (err) {
@@ -2460,6 +2533,7 @@
     document.getElementById('bb-loading-text').textContent = text;
     loading.setAttribute('aria-hidden', 'false');
     loading.classList.add('active');
+    bbAnnounce(text);
   }
 
   function bbHideLoading() {

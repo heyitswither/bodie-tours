@@ -42,6 +42,7 @@ if should_deploy "handle-booking"; then
     echo "=== Starting deployment of handle-booking ==="
     gcloud functions deploy handle-booking \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -60,6 +61,7 @@ if should_deploy "qbo-login"; then
     echo "=== Starting deployment of qbo-login ==="
     gcloud functions deploy qbo-login \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -78,6 +80,7 @@ if should_deploy "qbo-callback"; then
     echo "=== Starting deployment of qbo-callback ==="
     gcloud functions deploy qbo-callback \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -96,6 +99,7 @@ if should_deploy "m365-login"; then
     echo "=== Starting deployment of m365-login ==="
     gcloud functions deploy m365-login \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -114,6 +118,7 @@ if should_deploy "m365-callback"; then
     echo "=== Starting deployment of m365-callback ==="
     gcloud functions deploy m365-callback \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -132,6 +137,7 @@ if should_deploy "qbo-webhook"; then
     echo "=== Starting deployment of qbo-webhook ==="
     gcloud functions deploy qbo-webhook \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -150,6 +156,7 @@ if should_deploy "prune-unpaid-slots"; then
     echo "=== Starting deployment of prune-unpaid-slots ==="
     gcloud functions deploy prune-unpaid-slots \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -192,6 +199,7 @@ if should_deploy "retry-unpaid-bookings"; then
     echo "=== Starting deployment of retry-unpaid-bookings ==="
     gcloud functions deploy retry-unpaid-bookings \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -234,6 +242,7 @@ if should_deploy "m365-free-availability"; then
     echo "=== Starting deployment of m365-free-availability ==="
     gcloud functions deploy m365-free-availability \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \
@@ -252,6 +261,7 @@ if should_deploy "cancel-tour"; then
     echo "=== Starting deployment of cancel-tour ==="
     gcloud functions deploy cancel-tour \
       --gen2 \
+      --source=backend \
       --runtime="$RUNTIME" \
       --region="$REGION" \
       --trigger-http \

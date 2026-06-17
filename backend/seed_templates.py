@@ -6,8 +6,9 @@ def seed_templates():
     print("Initializing Firestore Client...")
     db = firestore.Client(database="bodie-tours")
 
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     # Read payment reminder template
-    reminder_path = "/home/freya/bodie-tours/templates/payment_reminder.html"
+    reminder_path = os.path.join(base_dir, "templates", "payment_reminder.html")
     if os.path.exists(reminder_path):
         with open(reminder_path, "r", encoding="utf-8") as f:
             reminder_html = f.read()
@@ -39,7 +40,7 @@ def seed_templates():
         print(f"Error: {reminder_path} not found.")
 
     # Read booking receipt template
-    receipt_path = "/home/freya/bodie-tours/templates/booking_receipt.html"
+    receipt_path = os.path.join(base_dir, "templates", "booking_receipt.html")
     if os.path.exists(receipt_path):
         with open(receipt_path, "r", encoding="utf-8") as f:
             receipt_html = f.read()

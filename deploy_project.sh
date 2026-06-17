@@ -173,8 +173,8 @@ else
   export GOOGLE_CLOUD_PROJECT="$PROJECT_ID"
   
   # Seed Email Templates
-  echo -e "${BLUE}Running template seeding (seed_templates.py)...${NC}"
-  if "$PYTHON_EXEC" seed_templates.py; then
+  echo -e "${BLUE}Running template seeding (backend/seed_templates.py)...${NC}"
+  if "$PYTHON_EXEC" backend/seed_templates.py; then
     echo -e "${GREEN}✔ Email templates successfully seeded to Firestore!${NC}"
   else
     echo -e "${RED}✘ Error: Failed to seed email templates.${NC}" >&2
@@ -183,8 +183,8 @@ else
   fi
   
   # Seed Tour Configurations
-  echo -e "${BLUE}Running tour configuration seeding (tours_config.py)...${NC}"
-  if "$PYTHON_EXEC" tours_config.py; then
+  echo -e "${BLUE}Running tour configuration seeding (backend/tours_config.py)...${NC}"
+  if "$PYTHON_EXEC" backend/tours_config.py; then
     echo -e "${GREEN}✔ Tour configurations successfully seeded to Firestore config/tours!${NC}"
   else
     echo -e "${RED}✘ Error: Failed to seed tour configurations.${NC}" >&2
@@ -219,7 +219,7 @@ if [[ "$SKIP_TOKEN_CHECK" = "true" ]]; then
 else
   echo -e "\n${BOLD}${CYAN}Step 5: Verifying & Refreshing Integration OAuth Tokens...${NC}"
   export GOOGLE_CLOUD_PROJECT="$PROJECT_ID"
-  if "$PYTHON_EXEC" verify_integrations.py --tokens-only; then
+  if "$PYTHON_EXEC" backend/verify_integrations.py --tokens-only; then
     echo -e "${GREEN}✔ Integration OAuth tokens successfully verified and refreshed!${NC}"
   else
     echo -e "${RED}✘ Error: Integration OAuth token verification or refresh failed.${NC}" >&2
