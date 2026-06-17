@@ -1679,6 +1679,27 @@
     });
   }
 
+  function loadRecaptchaScript(siteKey) {
+    return new Promise((resolve) => {
+      if (window.grecaptcha) {
+        resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = `https://www.google.com/recaptcha/api.js?render=${siteKey}`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        window.grecaptcha.ready(() => resolve());
+      };
+      script.onerror = () => {
+        console.error("Failed to load reCAPTCHA script.");
+        resolve(); // Resolve to prevent blocking form submission entirely on network failure
+      };
+      document.head.appendChild(script);
+    });
+  }
+
   async function bbSubmitBooking() {
     const name = document.getElementById('guest-name').value.trim();
     const email = document.getElementById('guest-email').value.trim();
@@ -1814,17 +1835,33 @@
     };
 
     try {
-      // Fetch CSRF Token first (Double-Submit Cookie protection)
+      // Fetch CSRF Token first (Double-Submit Cookie protection) and reCAPTCHA Site Key
       let csrfToken = '';
+      let recaptchaSiteKey = '';
       try {
         const csrfResponse = await fetchWithTimeout(BOOKING_API, { method: 'GET', credentials: 'include', timeout: 10000 });
         if (csrfResponse.ok) {
           const csrfData = await csrfResponse.json();
           csrfToken = csrfData.csrf_token;
+          recaptchaSiteKey = csrfData.recaptcha_site_key;
         }
       } catch (csrfErr) {
-        console.warn("Could not retrieve CSRF token:", csrfErr);
+        console.warn("Could not retrieve CSRF token or site key:", csrfErr);
       }
+
+      let recaptchaToken = '';
+      if (recaptchaSiteKey) {
+        try {
+          await loadRecaptchaScript(recaptchaSiteKey);
+          if (typeof grecaptcha !== 'undefined') {
+            recaptchaToken = await grecaptcha.execute(recaptchaSiteKey, { action: 'submit_booking' });
+          }
+        } catch (err) {
+          console.warn("reCAPTCHA execution failed, proceeding without token:", err);
+        }
+      }
+
+      payload.recaptcha_token = recaptchaToken;
 
       const response = await fetchWithTimeout(BOOKING_API, {
         method: 'POST',

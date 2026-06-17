@@ -1539,6 +1539,92 @@ def _get_csrf_secret_key():
     return _csrf_secret_key
 
 
+_recaptcha_site_key = None
+_recaptcha_secret_key = None
+
+
+def _get_recaptcha_secrets():
+    """
+    Retrieves the reCAPTCHA site_key and secret_key from environment variables
+    or Firestore config (document: config/recaptcha_auth).
+    Caches the keys in memory.
+    """
+    global _recaptcha_site_key, _recaptcha_secret_key
+    if _recaptcha_site_key is not None and _recaptcha_secret_key is not None:
+        if isinstance(_recaptcha_site_key, str) and isinstance(_recaptcha_secret_key, str):
+            return _recaptcha_site_key, _recaptcha_secret_key
+
+    site_key = None
+    secret_key = None
+
+    # Try environment variables first
+    env_site_key = os.environ.get("RECAPTCHA_SITE_KEY")
+    env_secret_key = os.environ.get("RECAPTCHA_SECRET_KEY")
+
+    if isinstance(env_site_key, str) and isinstance(env_secret_key, str) and env_site_key and env_secret_key:
+        _recaptcha_site_key = env_site_key
+        _recaptcha_secret_key = env_secret_key
+        return _recaptcha_site_key, _recaptcha_secret_key
+
+    if isinstance(env_site_key, str):
+        site_key = env_site_key
+    if isinstance(env_secret_key, str):
+        secret_key = env_secret_key
+
+    # Try config in Firestore
+    try:
+        doc = db.collection("config").document("recaptcha_auth").get()
+        if hasattr(doc, "exists") and isinstance(doc.exists, bool) and doc.exists:
+            data = doc.to_dict()
+            if isinstance(data, dict):
+                if not site_key:
+                    val = data.get("site_key")
+                    if isinstance(val, str):
+                        site_key = val
+                if not secret_key:
+                    val = data.get("secret_key")
+                    if isinstance(val, str):
+                        secret_key = val
+    except Exception:
+        pass
+
+    _recaptcha_site_key = site_key if isinstance(site_key, str) else ""
+    _recaptcha_secret_key = secret_key if isinstance(secret_key, str) else ""
+    return _recaptcha_site_key, _recaptcha_secret_key
+
+
+def _verify_recaptcha_token(token: str) -> bool:
+    """
+    Verifies the reCAPTCHA v3 token using Google's siteverify API.
+    If the secret key is not configured, verification is bypassed (returns True).
+    """
+    _, secret_key = _get_recaptcha_secrets()
+
+    if not secret_key:
+        print("[reCAPTCHA] Secret key not configured. Bypassing verification.")
+        return True
+
+    if not token:
+        print("[reCAPTCHA] Token missing but secret key is configured. Failing verification.")
+        return False
+
+    try:
+        response = requests.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={"secret": secret_key, "response": token},
+            timeout=5
+        )
+        res_data = response.json()
+        success = res_data.get("success", False)
+        score = res_data.get("score", 0.0)
+        print(f"[reCAPTCHA] Verification response: success={success}, score={score}")
+        # Standard reCAPTCHA v3 score threshold is 0.5
+        return success and score >= 0.5
+    except Exception as e:
+        print(f"[reCAPTCHA] Verification request failed: {e}")
+        return False
+
+
 def _generate_signed_csrf_token():
     """
     Generates a cryptographically signed CSRF token containing a timestamp and HMAC signature.
@@ -1625,7 +1711,16 @@ def handle_booking(request):
 
     if request.method == "GET":
         csrf_token = _generate_signed_csrf_token()
-        resp = make_response(jsonify({"status": "success", "csrf_token": csrf_token}))
+        site_key, _ = _get_recaptcha_secrets()
+        resp = make_response(
+            jsonify(
+                {
+                    "status": "success",
+                    "csrf_token": csrf_token,
+                    "recaptcha_site_key": site_key or "",
+                }
+            )
+        )
         resp.headers["Access-Control-Allow-Origin"] = cors_origin
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-CSRF-Token"
         resp.headers["Access-Control-Allow-Credentials"] = "true"
@@ -1663,6 +1758,19 @@ def handle_booking(request):
         if not tour_type:
             tour_type = "large_group_tour"
         vehicle_acknowledgment = bool(request_json.get("vehicle_acknowledgment", False))
+
+        # Validate reCAPTCHA v3
+        if not is_dummy:
+            recaptcha_token = request_json.get("recaptcha_token", "")
+            if not _verify_recaptcha_token(recaptcha_token):
+                return (
+                    {
+                        "status": "error",
+                        "message": "reCAPTCHA verification failed. Please try again.",
+                    },
+                    400,
+                    headers,
+                )
 
         # 1. Input Validation & Sanitization
         try:
